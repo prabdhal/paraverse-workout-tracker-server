@@ -1,14 +1,200 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  password    String
+  name        String
+  avatarUrl   String?
+  bio         String?
+  preferences Json // Store user preferences as JSON
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  refreshTokens   RefreshToken[]
+  workoutLogs     WorkoutLog[]
+  workoutPrograms WorkoutProgram[] @relation("UserWorkoutPrograms")
+  activePrograms  ActiveProgram[]
+  exercises       Exercise[]       @relation("CustomExercises")
+}
+
+// Refresh token for JWT
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Workout Log
+model WorkoutLog {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workoutType       String // "program" or "custom"
+  workoutName       String
+  startTime         DateTime
+  endTime           DateTime?
+  completed         Boolean   @default(false)
+  tags              String[] // e.g., ["deload", "PR", "light"]
+  calculatedMetrics Json? // Store calculated metrics as JSON
+  programId         String?
+  programName       String?
+  dayId             String?
+  dayName           String?
+
+  // Relations
+  exercises ExerciseLog[]
+
+  @@index([userId])
+  @@index([startTime])
+  @@index([userId, startTime])
+}
+
+// Exercise Log (within a workout)
+model ExerciseLog {
+  id                String     @id @default(cuid())
+  workoutLogId      String
+  workoutLog        WorkoutLog @relation(fields: [workoutLogId], references: [id], onDelete: Cascade)
+  exerciseId        String
+  exerciseName      String
+  sets              SetLog[]
+  notes             String?
+  order             Int
+  programExerciseId String?
+
+  @@index([workoutLogId])
+}
+
+// Set Log (within an exercise)
+model SetLog {
+  id            String      @id @default(cuid())
+  exerciseLogId String
+  exerciseLog   ExerciseLog @relation(fields: [exerciseLogId], references: [id], onDelete: Cascade)
+  setNumber     Int
+  reps          Int
+  weight        Float
+  completed     Boolean     @default(false)
+  rpe           Float?
+  notes         String?
+
+  @@index([exerciseLogId])
+}
+
+// Workout Program
+model WorkoutProgram {
+  id            String   @id @default(cuid())
+  name          String
+  description   String
+  difficulty    String // "beginner", "intermediate", "advanced"
+  goal          String // "muscle_building", "strength_training", etc.
+  daysPerWeek   Int
+  durationWeeks Int
+  tags          String[]
+  isPublic      Boolean  @default(false)
+  resourceLinks Json? // Store resource links as JSON
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Creator info
+  createdBy   String
+  creatorName String?
+
+  // Relations
+  workoutDays    WorkoutDay[]
+  activePrograms ActiveProgram[]
+  user           User?           @relation("UserWorkoutPrograms", fields: [createdBy], references: [id], onDelete: Cascade) // Add this line
+
+  @@index([createdBy])
+  @@index([isPublic])
+}
+
+// Workout Day (within a program)
+model WorkoutDay {
+  id                String         @id @default(cuid())
+  programId         String
+  program           WorkoutProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?
+  dayNumber         Int
+  estimatedDuration Int? // minutes
+  order             Int
+
+  // Relations
+  exercises ProgramDayExercise[]
+
+  @@index([programId])
+}
+
+// Program Day Exercise
+model ProgramDayExercise {
+  id           String     @id @default(cuid())
+  workoutDayId String
+  workoutDay   WorkoutDay @relation(fields: [workoutDayId], references: [id], onDelete: Cascade)
+  exerciseId   String
+  exerciseName String
+  sets         Int
+  repType      String // "fixed" or "range"
+  reps         Int // For fixed reps, or min reps for range
+  maxReps      Int? // For rep range
+  restInterval Int // seconds
+  notes        String?
+  order        Int
+
+  @@index([workoutDayId])
+}
+
+// Exercise Database
+model Exercise {
+  id                    String   @id @default(cuid())
+  name                  String   @unique
+  description           String?
+  primaryMuscleGroup    String
+  secondaryMuscleGroups String[]
+  equipment             String[]
+  imageUrl              String?
+  videoUrl              String?
+  category              String // "strength", "cardio", "bodyweight", "flexibility"
+  custom                Boolean  @default(false)
+  createdBy             String? // User ID if custom exercise
+
+  // Relations
+  user User? @relation("CustomExercises", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([createdBy])
+  @@index([custom])
+  @@index([primaryMuscleGroup])
+}
+
+// Active Program (user's current program)
+model ActiveProgram {
+  id                 String         @id @default(cuid())
+  userId             String
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  programId          String
+  program            WorkoutProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  startDate          DateTime       @default(now())
+  currentDayIndex    Int            @default(0)
+  nextWorkoutDate    DateTime?
+  completedWorkouts  String[] // IDs of completed workout days
+  progressPercentage Float          @default(0)
+  streak             Int             @default(0)
+  isActive           Boolean        @default(true)
+
+  @@unique([userId, isActive], name: "unique_active_program_per_user")
+  @@index([userId])
 }
