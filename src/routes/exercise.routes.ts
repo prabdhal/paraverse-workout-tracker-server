@@ -1,3 +1,4 @@
+// routes/exercise.routes.ts
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 import { authenticateToken } from "../middleware/auth";
@@ -5,331 +6,261 @@ import { authenticateToken } from "../middleware/auth";
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get all programs
+// Get all exercises with filtering
 router.get("/", authenticateToken, async (req, res) => {
   try {
-    const programs = await prisma.workoutProgram.findMany({
-      where: {
-        OR: [{ createdBy: req.user!.userId }, { isPublic: true }],
-      },
-      include: {
-        workoutDays: {
-          include: { exercises: true },
-          orderBy: { order: "asc" },
-        },
-      },
-      orderBy: { createdAt: "desc" },
+    const { muscleGroup, category, limit = 50, offset = 0 } = req.query;
+
+    const where: any = {
+      OR: [{ custom: false }, { createdBy: req.user!.userId }],
+    };
+
+    if (muscleGroup) {
+      where.OR = [
+        { primaryMuscleGroup: muscleGroup as string },
+        { secondaryMuscleGroups: { has: muscleGroup as string } },
+      ];
+    }
+
+    if (category) {
+      where.category = category as string;
+    }
+
+    const exercises = await prisma.exercise.findMany({
+      where,
+      take: parseInt(limit as string),
+      skip: parseInt(offset as string),
+      orderBy: { name: "asc" },
     });
 
     res.json({
       success: true,
-      data: programs.map((program) => ({
-        ...program,
-        isCreator: program.createdBy === req.user!.userId,
-      })),
+      data: exercises,
+      pagination: {
+        total: await prisma.exercise.count({ where }),
+        limit: parseInt(limit as string),
+        offset: parseInt(offset as string),
+      },
     });
   } catch (error) {
-    console.error("Get programs error:", error);
+    console.error("Get exercises error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to fetch programs",
+      message: "Failed to fetch exercises",
     });
   }
 });
 
-// Get single program
+// Search exercises
+router.get("/search", authenticateToken, async (req, res) => {
+  try {
+    const { query, muscleGroup, limit = 20 } = req.query;
+
+    if (!query || (query as string).trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: "Search query must be at least 2 characters",
+      });
+    }
+
+    const where: any = {
+      OR: [{ custom: false }, { createdBy: req.user!.userId }],
+      name: {
+        contains: query as string,
+        mode: "insensitive",
+      },
+    };
+
+    if (muscleGroup) {
+      where.OR = [
+        { primaryMuscleGroup: muscleGroup as string },
+        { secondaryMuscleGroups: { has: muscleGroup as string } },
+      ];
+    }
+
+    const exercises = await prisma.exercise.findMany({
+      where,
+      take: parseInt(limit as string),
+      orderBy: { name: "asc" },
+    });
+
+    res.json(exercises);
+  } catch (error) {
+    console.error("Search exercises error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to search exercises",
+    });
+  }
+});
+
+// Get exercise by ID
 router.get("/:id", authenticateToken, async (req, res) => {
   try {
-    const program = await prisma.workoutProgram.findUnique({
+    const exercise = await prisma.exercise.findUnique({
       where: { id: req.params.id },
-      include: {
-        workoutDays: {
-          include: { exercises: true },
-          orderBy: { order: "asc" },
-        },
-      },
     });
 
-    if (!program) {
+    if (!exercise) {
       return res.status(404).json({
         success: false,
-        message: "Program not found",
+        message: "Exercise not found",
       });
     }
 
-    // Check if user can view program
-    if (!program.isPublic && program.createdBy !== req.user!.userId) {
+    // Check if user can view custom exercise
+    if (exercise.custom && exercise.createdBy !== req.user!.userId) {
       return res.status(403).json({
         success: false,
-        message: "You don't have permission to view this program",
+        message: "You don't have permission to view this exercise",
       });
     }
 
     res.json({
       success: true,
-      data: {
-        ...program,
-        isCreator: program.createdBy === req.user!.userId,
-      },
+      data: exercise,
     });
   } catch (error) {
-    console.error("Get program error:", error);
+    console.error("Get exercise error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to fetch program",
+      message: "Failed to fetch exercise",
     });
   }
 });
 
-// Create program
+// Create custom exercise
 router.post("/", authenticateToken, async (req, res) => {
   try {
     const {
       name,
       description,
-      difficulty,
-      goal,
-      daysPerWeek,
-      durationWeeks,
-      workoutDays,
-      tags,
-      isPublic,
-      resourceLinks,
+      primaryMuscleGroup,
+      secondaryMuscleGroups,
+      equipment,
+      imageUrl,
+      videoUrl,
+      category,
     } = req.body;
 
-    const program = await prisma.workoutProgram.create({
+    // Check if exercise already exists
+    const existingExercise = await prisma.exercise.findFirst({
+      where: {
+        name,
+        custom: false,
+      },
+    });
+
+    if (existingExercise) {
+      return res.status(409).json({
+        success: false,
+        message: "Exercise with this name already exists",
+      });
+    }
+
+    const exercise = await prisma.exercise.create({
       data: {
         name,
         description,
-        difficulty,
-        goal,
-        daysPerWeek,
-        durationWeeks,
+        primaryMuscleGroup,
+        secondaryMuscleGroups,
+        equipment,
+        imageUrl,
+        videoUrl,
+        category,
+        custom: true,
         createdBy: req.user!.userId,
-        creatorName: req.user!.name,
-        isPublic: isPublic || false,
-        tags,
-        resourceLinks,
-        workoutDays: {
-          create: workoutDays.map((day: any) => ({
-            name: day.name,
-            description: day.description,
-            dayNumber: day.dayNumber,
-            order: day.order,
-            estimatedDuration: day.estimatedDuration,
-            exercises: {
-              create: day.exercises.map((exercise: any) => ({
-                exerciseId: exercise.exerciseId,
-                exerciseName: exercise.exerciseName,
-                sets: exercise.sets,
-                repType: exercise.repType,
-                reps: exercise.reps,
-                maxReps: exercise.maxReps,
-                restInterval: exercise.restInterval,
-                notes: exercise.notes,
-                order: exercise.order,
-              })),
-            },
-          })),
-        },
-      },
-      include: {
-        workoutDays: {
-          include: { exercises: true },
-        },
       },
     });
 
     res.status(201).json({
       success: true,
-      message: "Program created successfully",
-      data: program,
+      message: "Exercise created successfully",
+      data: exercise,
     });
   } catch (error) {
-    console.error("Create program error:", error);
+    console.error("Create exercise error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to create program",
+      message: "Failed to create exercise",
     });
   }
 });
 
-// Update program
+// Update custom exercise (only for user's own custom exercises)
 router.put("/:id", authenticateToken, async (req, res) => {
   try {
-    const program = await prisma.workoutProgram.findUnique({
+    const exercise = await prisma.exercise.findUnique({
       where: { id: req.params.id },
     });
 
-    if (!program) {
+    if (!exercise) {
       return res.status(404).json({
         success: false,
-        message: "Program not found",
+        message: "Exercise not found",
       });
     }
 
-    // Check if user is creator
-    if (program.createdBy !== req.user!.userId) {
+    if (!exercise.custom || exercise.createdBy !== req.user!.userId) {
       return res.status(403).json({
         success: false,
-        message: "You can only edit your own programs",
+        message: "You can only edit your own custom exercises",
       });
     }
 
-    const updatedProgram = await prisma.workoutProgram.update({
+    const updatedExercise = await prisma.exercise.update({
       where: { id: req.params.id },
       data: req.body,
-      include: {
-        workoutDays: {
-          include: { exercises: true },
-        },
-      },
     });
 
     res.json({
       success: true,
-      message: "Program updated successfully",
-      data: updatedProgram,
+      message: "Exercise updated successfully",
+      data: updatedExercise,
     });
   } catch (error) {
-    console.error("Update program error:", error);
+    console.error("Update exercise error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to update program",
+      message: "Failed to update exercise",
     });
   }
 });
 
-// Delete program
+// Delete custom exercise
 router.delete("/:id", authenticateToken, async (req, res) => {
   try {
-    const program = await prisma.workoutProgram.findUnique({
+    const exercise = await prisma.exercise.findUnique({
       where: { id: req.params.id },
     });
 
-    if (!program) {
+    if (!exercise) {
       return res.status(404).json({
         success: false,
-        message: "Program not found",
+        message: "Exercise not found",
       });
     }
 
-    if (program.createdBy !== req.user!.userId) {
+    if (!exercise.custom || exercise.createdBy !== req.user!.userId) {
       return res.status(403).json({
         success: false,
-        message: "You can only delete your own programs",
+        message: "You can only delete your own custom exercises",
       });
     }
 
-    await prisma.workoutProgram.delete({
+    await prisma.exercise.delete({
       where: { id: req.params.id },
     });
 
     res.json({
       success: true,
-      message: "Program deleted successfully",
+      message: "Exercise deleted successfully",
     });
   } catch (error) {
-    console.error("Delete program error:", error);
+    console.error("Delete exercise error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to delete program",
-    });
-  }
-});
-
-// Start program (set as active)
-router.post("/:id/start", authenticateToken, async (req, res) => {
-  try {
-    const program = await prisma.workoutProgram.findUnique({
-      where: { id: req.params.id },
-    });
-
-    if (!program) {
-      return res.status(404).json({
-        success: false,
-        message: "Program not found",
-      });
-    }
-
-    // Deactivate any current active program
-    await prisma.activeProgram.updateMany({
-      where: { userId: req.user!.userId },
-      data: { isActive: false },
-    });
-
-    // Create new active program
-    const activeProgram = await prisma.activeProgram.create({
-      data: {
-        userId: req.user!.userId,
-        programId: program.id,
-        startDate: new Date(),
-        currentDayIndex: 0,
-        progressPercentage: 0,
-        streak: 0,
-        isActive: true,
-      },
-      include: {
-        program: {
-          include: {
-            workoutDays: {
-              include: { exercises: true },
-            },
-          },
-        },
-      },
-    });
-
-    res.json({
-      success: true,
-      message: "Program started successfully",
-      data: activeProgram,
-    });
-  } catch (error) {
-    console.error("Start program error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to start program",
-    });
-  }
-});
-
-// Get active program
-router.get("/active/current", authenticateToken, async (req, res) => {
-  try {
-    const activeProgram = await prisma.activeProgram.findFirst({
-      where: {
-        userId: req.user!.userId,
-        isActive: true,
-      },
-      include: {
-        program: {
-          include: {
-            workoutDays: {
-              include: { exercises: true },
-            },
-          },
-        },
-      },
-    });
-
-    if (!activeProgram) {
-      return res.json({
-        success: true,
-        data: null,
-        message: "No active program",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: activeProgram,
-    });
-  } catch (error) {
-    console.error("Get active program error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch active program",
+      message: "Failed to delete exercise",
     });
   }
 });

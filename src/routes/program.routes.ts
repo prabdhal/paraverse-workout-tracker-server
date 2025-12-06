@@ -1,3 +1,4 @@
+// server/src/routes/program.routes.ts
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 import { authenticateToken } from "../middleware/auth";
@@ -97,6 +98,19 @@ router.post("/", authenticateToken, async (req, res) => {
       resourceLinks,
     } = req.body;
 
+    // Get user from database to ensure we have the name
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.userId },
+      select: { id: true, name: true, email: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
     const program = await prisma.workoutProgram.create({
       data: {
         name,
@@ -106,7 +120,7 @@ router.post("/", authenticateToken, async (req, res) => {
         daysPerWeek,
         durationWeeks,
         createdBy: req.user!.userId,
-        creatorName: req.user!.name,
+        creatorName: user.name,
         isPublic: isPublic || false,
         tags,
         resourceLinks,
@@ -154,14 +168,22 @@ router.post("/", authenticateToken, async (req, res) => {
   }
 });
 
-// Update program
+// Update program (basic fields only - no workoutDays for now)
 router.put("/:id", authenticateToken, async (req, res) => {
   try {
+    console.log("Update program request:", {
+      programId: req.params.id,
+      userId: req.user!.userId,
+      body: req.body,
+    });
+
+    // First, verify the program exists and user has permission
     const program = await prisma.workoutProgram.findUnique({
       where: { id: req.params.id },
     });
 
     if (!program) {
+      console.log("Program not found:", req.params.id);
       return res.status(404).json({
         success: false,
         message: "Program not found",
@@ -170,32 +192,96 @@ router.put("/:id", authenticateToken, async (req, res) => {
 
     // Check if user is creator
     if (program.createdBy !== req.user!.userId) {
+      console.log("User not authorized to edit program:", {
+        programCreator: program.createdBy,
+        currentUser: req.user!.userId,
+      });
       return res.status(403).json({
         success: false,
         message: "You can only edit your own programs",
       });
     }
 
+    const {
+      name,
+      description,
+      difficulty,
+      goal,
+      daysPerWeek,
+      durationWeeks,
+      tags,
+      isPublic,
+      resourceLinks,
+    } = req.body;
+
+    console.log("Updating program with data:", {
+      name,
+      difficulty,
+      goal,
+      daysPerWeek,
+      durationWeeks,
+    });
+
+    // Update only basic fields for now
+    const updateData: any = {
+      name,
+      description,
+      difficulty,
+      goal,
+      daysPerWeek,
+      durationWeeks,
+      tags,
+      isPublic,
+      resourceLinks,
+      updatedAt: new Date(),
+    };
+
+    // Remove undefined fields
+    Object.keys(updateData).forEach((key) => {
+      if (updateData[key] === undefined) {
+        delete updateData[key];
+      }
+    });
+
+    console.log("Final update data:", updateData);
+
     const updatedProgram = await prisma.workoutProgram.update({
       where: { id: req.params.id },
-      data: req.body,
+      data: updateData,
       include: {
         workoutDays: {
           include: { exercises: true },
+          orderBy: { order: "asc" },
         },
       },
     });
+
+    console.log("Program updated successfully:", updatedProgram.id);
 
     res.json({
       success: true,
       message: "Program updated successfully",
       data: updatedProgram,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Update program error:", error);
+    console.error("Error details:", {
+      message: error.message,
+      code: error.code,
+      meta: error.meta,
+    });
+
+    let errorMessage = "Failed to update program";
+    if (error.code === "P2025") {
+      errorMessage = "Program not found";
+    } else if (error.code === "P2002") {
+      errorMessage = "A program with this name already exists";
+    }
+
     res.status(500).json({
       success: false,
-      message: "Failed to update program",
+      message: errorMessage,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
@@ -330,6 +416,76 @@ router.get("/active/current", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch active program",
+    });
+  }
+});
+
+router.patch("/:id/deactivate", authenticateToken, async (req, res) => {
+  try {
+    const activeProgram = await prisma.activeProgram.findFirst({
+      where: {
+        id: req.params.id,
+        userId: req.user!.userId,
+      },
+    });
+
+    if (!activeProgram) {
+      return res.status(404).json({
+        success: false,
+        message: "Active program not found",
+      });
+    }
+
+    await prisma.activeProgram.update({
+      where: { id: req.params.id },
+      data: { isActive: false },
+    });
+
+    res.json({
+      success: true,
+      message: "Program deactivated",
+    });
+  } catch (error) {
+    console.error("Deactivate program error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to deactivate program",
+    });
+  }
+});
+
+router.put("/active-programs/:id", authenticateToken, async (req, res) => {
+  try {
+    const { progressPercentage } = req.body;
+
+    const activeProgram = await prisma.activeProgram.findFirst({
+      where: {
+        id: req.params.id,
+        userId: req.user!.userId,
+      },
+    });
+
+    if (!activeProgram) {
+      return res.status(404).json({
+        success: false,
+        message: "Active program not found",
+      });
+    }
+
+    await prisma.activeProgram.update({
+      where: { id: req.params.id },
+      data: { progressPercentage },
+    });
+
+    res.json({
+      success: true,
+      message: "Program progress updated",
+    });
+  } catch (error) {
+    console.error("Update active program error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update program progress",
     });
   }
 });
