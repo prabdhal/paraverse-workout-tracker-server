@@ -1,0 +1,37 @@
+#!/bin/bash
+
+echo "🚀 ParaVerse Backend Deployment to Render"
+echo "========================================="
+
+echo "1️⃣ Pushing to GitHub..."
+git add .
+git commit -m "Deploy to Render - $(date '+%Y-%m-%d %H:%M:%S')"
+git push origin main
+
+echo "✅ Code pushed!"
+echo ""
+echo "2️⃣ Now go to: https://dashboard.render.com"
+echo "   Click 'New +' → 'Web Service'"
+echo "   Connect your GitHub repo"
+echo ""
+echo "3️⃣ Configure with these settings:"
+echo "   - Name: paraverse-workout-tracker-backend"
+echo "   - Environment: Node"
+echo "   - Build Command: cd server && npm install && npx prisma generate && npm run build"
+echo "   - Start Command: cd server && npm start"
+echo "   - Plan: Free"
+echo ""
+echo "4️⃣ Add these environment variables:"
+echo "   - NODE_ENV = production"
+echo "   - JWT_SECRET = [generate a strong random string]"
+echo ""
+echo "5️⃣ After service is created, add PostgreSQL:"
+echo "   Click 'New +' → 'PostgreSQL'"
+echo "   Name: paraverse-db"
+echo "   Database: paraverse"
+echo "   User: paraverse_user"
+echo "   Plan: Free"
+echo ""
+echo "6️⃣ Get the database URL and add as DATABASE_URL env var"
+echo ""
+echo "🎉 Your API will be at: https://paraverse-workout-tracker-backend.onrender.com"

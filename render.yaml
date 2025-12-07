@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: paraverse-workout-tracker-backend
+    env: node
+    region: oregon
+    # REMOVED: rootDir: server  ← This was causing the error
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: development
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 10000
+    healthCheckPath: /health
+    autoDeploy: true
+
+databases:
+  - name: paraverse-db
+    databaseName: paraverse
+    user: paraverse_user
+    plan: free
