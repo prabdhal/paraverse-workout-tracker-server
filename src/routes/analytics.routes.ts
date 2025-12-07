@@ -54,7 +54,10 @@ router.get("/workouts", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch analytics",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      error:
+        process.env.NODE_ENV === "development" && error instanceof Error
+          ? error.message
+          : undefined,
     });
   }
 });
@@ -88,7 +91,10 @@ router.get("/streak", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch streak information",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      error:
+        process.env.NODE_ENV === "development" && error instanceof Error
+          ? error.message
+          : undefined,
     });
   }
 });
@@ -127,7 +133,10 @@ router.get("/volume", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch volume data",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      error:
+        process.env.NODE_ENV === "development" && error instanceof Error
+          ? error.message
+          : undefined,
     });
   }
 });
