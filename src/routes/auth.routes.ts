@@ -288,56 +288,5 @@ router.get("/me", authenticateToken, async (req, res) => {
       message: "Internal server error",
     });
   }
-
-  // Temporary login (no database required)
-  router.post("/login-temp", validateLogin, async (req, res) => {
-    try {
-      const { email, password } = req.body;
-
-      console.log("Using temporary auth for:", email);
-
-      // Simple validation
-      if (email === "test@test.com" && password === "test123") {
-        const user = {
-          id: "temp-user-id",
-          email: "test@test.com",
-          name: "Test User",
-          avatarUrl: null,
-          createdAt: new Date(),
-        };
-
-        // Use a default secret if JWT_SECRET is not set
-        const jwtSecret =
-          process.env.JWT_SECRET || "temp-secret-key-for-development";
-
-        const accessToken = jwt.sign(
-          { userId: user.id, email: user.email },
-          jwtSecret,
-          { expiresIn: "7d" }
-        );
-
-        res.json({
-          success: true,
-          data: {
-            user,
-            accessToken,
-            refreshToken: accessToken, // Simplified
-          },
-        });
-      } else {
-        res.status(401).json({
-          success: false,
-          message: "Invalid credentials. Use test@test.com / test123",
-        });
-      }
-    } catch (error: any) {
-      console.error("Temp login error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-        error: error.message,
-      });
-    }
-  });
 });
 export default router;

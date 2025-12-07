@@ -74,6 +74,50 @@ app.get("/health", (req, res) => {
   });
 });
 
+import { PrismaClient } from "@prisma/client";
+
+// Add this after your health check
+app.get("/api/db-test", async (req, res) => {
+  try {
+    const prisma = new PrismaClient();
+
+    console.log("Testing database connection...");
+    console.log("DATABASE_URL exists:", !!process.env.DATABASE_URL);
+
+    // Test connection
+    await prisma.$connect();
+
+    // Try to query users table
+    const userCount = await prisma.user.count();
+
+    // Try to create a table if doesn't exist (for testing)
+    try {
+      await prisma.$executeRaw`SELECT 1 FROM "User" LIMIT 1`;
+      console.log("✅ Users table exists");
+    } catch {
+      console.log("❌ Users table does not exist");
+    }
+
+    await prisma.$disconnect();
+
+    res.json({
+      success: true,
+      message: "Database connection successful",
+      userCount,
+      databaseUrlSet: !!process.env.DATABASE_URL,
+      tablesExist: userCount >= 0, // If no error, table exists
+    });
+  } catch (error: any) {
+    console.error("❌ Database test failed:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      errorCode: error.code,
+      suggestion: "Run: npx prisma migrate deploy or npx prisma db push",
+    });
+  }
+});
+
 // API Documentation - Update to include workout-logs
 app.get("/api", (req, res) => {
   res.json({

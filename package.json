@@ -9,9 +9,10 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "seed": "tsx scripts/seed.ts",
-    "render-build": "npm install && npm run prisma:generate && npm run build"
+    "render-build": "npm install && npm run prisma:generate && npm run prisma:migrate:deploy && npm run build"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
