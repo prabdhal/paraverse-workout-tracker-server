@@ -54,37 +54,34 @@ router.get("/", authenticateToken, async (req, res) => {
 // Search exercises
 router.get("/search", authenticateToken, async (req, res) => {
   try {
-    const { query, muscleGroup, limit = 20 } = req.query;
+    const { query, muscleGroup, limit } = req.query;
 
-    if (!query || (query as string).trim().length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: "Search query must be at least 2 characters",
-      });
+    let whereClause: any = {};
+
+    if (query) {
+      whereClause.name = {
+        contains: query,
+        mode: "insensitive",
+      };
     }
 
-    const where: any = {
-      OR: [{ custom: false }, { createdBy: req.user!.userId }],
-      name: {
-        contains: query as string,
-        mode: "insensitive",
-      },
-    };
-
     if (muscleGroup) {
-      where.OR = [
-        { primaryMuscleGroup: muscleGroup as string },
-        { secondaryMuscleGroups: { has: muscleGroup as string } },
+      whereClause.OR = [
+        { primaryMuscleGroup: muscleGroup },
+        { secondaryMuscleGroups: { has: muscleGroup } },
       ];
     }
 
     const exercises = await prisma.exercise.findMany({
-      where,
-      take: parseInt(limit as string),
+      where: whereClause,
+      take: limit ? parseInt(limit as string) : 50,
       orderBy: { name: "asc" },
     });
 
-    res.json(exercises);
+    res.json({
+      success: true,
+      data: exercises,
+    });
   } catch (error) {
     console.error("Search exercises error:", error);
     res.status(500).json({
