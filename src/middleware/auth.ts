@@ -21,7 +21,16 @@ export const authenticateToken = (
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
 
+  console.log("=== AUTHENTICATE TOKEN MIDDLEWARE ===");
+  console.log("Request path:", req.path);
+  console.log("Authorization header exists:", !!authHeader);
+  console.log(
+    "Token extracted:",
+    token ? `${token.substring(0, 50)}...` : "none"
+  );
+
   if (!token) {
+    console.log("❌ ERROR: No token provided");
     return res.status(401).json({
       success: false,
       message: "Access token required",
@@ -29,16 +38,38 @@ export const authenticateToken = (
   }
 
   try {
+    console.log("🔑 Verifying token with JWT_SECRET...");
+    console.log("JWT_SECRET exists:", !!process.env.JWT_SECRET);
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
       userId: string;
       email: string;
     };
+
+    console.log("✅ Token verified successfully");
+    console.log("👤 Decoded user ID:", decoded.userId);
+    console.log("📧 Decoded email:", decoded.email);
+
     req.user = decoded;
     next();
-  } catch (error) {
+  } catch (error: any) {
+    console.log("❌ Token verification failed");
+    console.log("Error name:", error.name);
+    console.log("Error message:", error.message);
+
+    if (error.name === "TokenExpiredError") {
+      console.log("⏰ Token expired at:", error.expiredAt);
+      return res.status(401).json({
+        success: false,
+        message: "Token expired. Please refresh your token.",
+        code: "TOKEN_EXPIRED",
+      });
+    }
+
     return res.status(403).json({
       success: false,
-      message: "Invalid or expired token",
+      message: "Invalid token",
+      code: "INVALID_TOKEN",
     });
   }
 };

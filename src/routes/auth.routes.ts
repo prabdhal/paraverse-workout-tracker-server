@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
 import { validateRegister, validateLogin } from "../middleware/validation";
+import { authenticateToken } from "../middleware/auth"; // Make sure this is imported
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -77,10 +78,8 @@ router.post("/register", validateRegister, async (req, res) => {
       message: "User created successfully",
       data: {
         user,
-        tokens: {
-          accessToken,
-          refreshToken,
-        },
+        accessToken,
+        refreshToken,
       },
     });
   } catch (error) {
@@ -151,15 +150,15 @@ router.post("/login", validateLogin, async (req, res) => {
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
+    // IMPORTANT: Return the EXACT structure your frontend expects
+    // Your frontend expects { user, accessToken, refreshToken } directly
+    // But your apiClient unwraps the 'data' property, so we need to nest it
     res.json({
       success: true,
-      message: "Login successful",
       data: {
         user: userWithoutPassword,
-        tokens: {
-          accessToken,
-          refreshToken,
-        },
+        accessToken,
+        refreshToken,
       },
     });
   } catch (error) {
@@ -170,7 +169,6 @@ router.post("/login", validateLogin, async (req, res) => {
     });
   }
 });
-
 // Refresh token
 router.post("/refresh", async (req, res) => {
   try {
@@ -251,18 +249,15 @@ router.post("/logout", async (req, res) => {
   }
 });
 
-// Get current user
-router.get("/me", async (req, res) => {
+// Get current user - ADD authenticateToken middleware!
+router.get("/me", authenticateToken, async (req, res) => {
+  // ✅ Add this
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: "Not authenticated",
-      });
-    }
+    // req.user will now be set by the middleware
+    console.log("🔍 /me endpoint - User from middleware:", req.user);
 
     const user = await prisma.user.findUnique({
-      where: { id: req.user.userId },
+      where: { id: req.user!.userId },
       select: {
         id: true,
         email: true,
@@ -294,5 +289,4 @@ router.get("/me", async (req, res) => {
     });
   }
 });
-
 export default router;

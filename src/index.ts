@@ -7,6 +7,7 @@ import programRoutes from "./routes/program.routes";
 import exerciseRoutes from "./routes/exercise.routes";
 import analyticsRoutes from "./routes/analytics.routes";
 import profileRoutes from "./routes/profile.routes";
+import workoutLogRoutes from "./routes/workoutLog.routes";
 import { authenticateToken } from "./middleware/auth";
 
 dotenv.config();
@@ -34,7 +35,7 @@ app.get("/health", (req, res) => {
   });
 });
 
-// API Documentation
+// API Documentation - Update to include workout-logs
 app.get("/api", (req, res) => {
   res.json({
     name: "ParaVerse Fitness API",
@@ -46,6 +47,15 @@ app.get("/api", (req, res) => {
         refresh: "POST /api/auth/refresh",
         logout: "POST /api/auth/logout",
         me: "GET /api/auth/me",
+      },
+      workoutLogs: {
+        list: "GET /api/workout-logs",
+        create: "POST /api/workout-logs",
+        get: "GET /api/workout-logs/:id",
+        update: "PUT /api/workout-logs/:id",
+        delete: "DELETE /api/workout-logs/:id",
+        finish: "POST /api/workout-logs/:id/finish",
+        stats: "GET /api/workout-logs/stats/summary",
       },
       workouts: {
         list: "GET /api/workouts",
@@ -94,6 +104,7 @@ app.use("/api/programs", authenticateToken, programRoutes);
 app.use("/api/exercises", authenticateToken, exerciseRoutes);
 app.use("/api/analytics", authenticateToken, analyticsRoutes);
 app.use("/api/profile", authenticateToken, profileRoutes);
+app.use("/api/workout-logs", authenticateToken, workoutLogRoutes);
 
 // Protected test route
 app.get("/api/protected", authenticateToken, (req, res) => {

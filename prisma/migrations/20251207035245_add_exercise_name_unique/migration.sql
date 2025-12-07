@@ -1,3 +1,75 @@
+/*
+  Warnings:
+
+  - You are about to drop the `active_programs` table. If the table is not empty, all the data it contains will be lost.
+  - You are about to drop the `exercise_logs` table. If the table is not empty, all the data it contains will be lost.
+  - You are about to drop the `exercises` table. If the table is not empty, all the data it contains will be lost.
+  - You are about to drop the `program_day_exercises` table. If the table is not empty, all the data it contains will be lost.
+  - You are about to drop the `program_days` table. If the table is not empty, all the data it contains will be lost.
+  - You are about to drop the `programs` table. If the table is not empty, all the data it contains will be lost.
+  - You are about to drop the `refresh_tokens` table. If the table is not empty, all the data it contains will be lost.
+  - You are about to drop the `set_logs` table. If the table is not empty, all the data it contains will be lost.
+  - You are about to drop the `users` table. If the table is not empty, all the data it contains will be lost.
+  - You are about to drop the `workouts` table. If the table is not empty, all the data it contains will be lost.
+
+*/
+-- DropForeignKey
+ALTER TABLE "active_programs" DROP CONSTRAINT "active_programs_programId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "active_programs" DROP CONSTRAINT "active_programs_userId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "exercise_logs" DROP CONSTRAINT "exercise_logs_workoutId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "program_day_exercises" DROP CONSTRAINT "program_day_exercises_programDayId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "program_days" DROP CONSTRAINT "program_days_programId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "programs" DROP CONSTRAINT "programs_userId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "refresh_tokens" DROP CONSTRAINT "refresh_tokens_userId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "set_logs" DROP CONSTRAINT "set_logs_exerciseLogId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "workouts" DROP CONSTRAINT "workouts_userId_fkey";
+
+-- DropTable
+DROP TABLE "active_programs";
+
+-- DropTable
+DROP TABLE "exercise_logs";
+
+-- DropTable
+DROP TABLE "exercises";
+
+-- DropTable
+DROP TABLE "program_day_exercises";
+
+-- DropTable
+DROP TABLE "program_days";
+
+-- DropTable
+DROP TABLE "programs";
+
+-- DropTable
+DROP TABLE "refresh_tokens";
+
+-- DropTable
+DROP TABLE "set_logs";
+
+-- DropTable
+DROP TABLE "users";
+
+-- DropTable
+DROP TABLE "workouts";
+
 -- CreateTable
 CREATE TABLE "User" (
     "id" TEXT NOT NULL,
@@ -191,6 +263,9 @@ CREATE INDEX "WorkoutDay_programId_idx" ON "WorkoutDay"("programId");
 
 -- CreateIndex
 CREATE INDEX "ProgramDayExercise_workoutDayId_idx" ON "ProgramDayExercise"("workoutDayId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Exercise_name_key" ON "Exercise"("name");
 
 -- CreateIndex
 CREATE INDEX "Exercise_createdBy_idx" ON "Exercise"("createdBy");

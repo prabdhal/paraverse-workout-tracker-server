@@ -40,32 +40,34 @@ model RefreshToken {
   @@index([expiresAt])
 }
 
-// Workout Log
+// Workout Log - FIXED to match TypeScript
 model WorkoutLog {
-  id                String    @id @default(cuid())
+  id                String      @id @default(cuid())
   userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workoutType       String // "program" or "custom"
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workoutType       String      // "program" or "custom"
   workoutName       String
   startTime         DateTime
   endTime           DateTime?
-  completed         Boolean   @default(false)
-  tags              String[] // e.g., ["deload", "PR", "light"]
-  calculatedMetrics Json? // Store calculated metrics as JSON
+  completed         Boolean     @default(false)
+  tags              String[]    // e.g., ["deload", "PR", "light"]
+  calculatedMetrics Json?       // Store calculated metrics as JSON
+  
+  // Program workout tracking
   programId         String?
   programName       String?
   dayId             String?
   dayName           String?
 
-  // Relations
-  exercises ExerciseLog[]
+  // Relations - FIXED naming
+  exerciseLogs ExerciseLog[]
 
   @@index([userId])
   @@index([startTime])
   @@index([userId, startTime])
 }
 
-// Exercise Log (within a workout)
+// Exercise Log (within a workout) - FIXED naming
 model ExerciseLog {
   id                String     @id @default(cuid())
   workoutLogId      String
@@ -95,7 +97,7 @@ model SetLog {
   @@index([exerciseLogId])
 }
 
-// Workout Program
+// Workout Program - FIXED to match TypeScript
 model WorkoutProgram {
   id            String   @id @default(cuid())
   name          String
@@ -106,7 +108,7 @@ model WorkoutProgram {
   durationWeeks Int
   tags          String[]
   isPublic      Boolean  @default(false)
-  resourceLinks Json? // Store resource links as JSON
+  resourceLinks Json?    // Store resource links as JSON
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -117,13 +119,13 @@ model WorkoutProgram {
   // Relations
   workoutDays    WorkoutDay[]
   activePrograms ActiveProgram[]
-  user           User?           @relation("UserWorkoutPrograms", fields: [createdBy], references: [id], onDelete: Cascade) // Add this line
+  user           User? @relation("UserWorkoutPrograms", fields: [createdBy], references: [id], onDelete: Cascade)
 
   @@index([createdBy])
   @@index([isPublic])
 }
 
-// Workout Day (within a program)
+// Workout Day (within a program) - FIXED naming
 model WorkoutDay {
   id                String         @id @default(cuid())
   programId         String
@@ -134,13 +136,13 @@ model WorkoutDay {
   estimatedDuration Int? // minutes
   order             Int
 
-  // Relations
-  exercises ProgramDayExercise[]
+  // Relations - FIXED naming
+  programDayExercises ProgramDayExercise[]
 
   @@index([programId])
 }
 
-// Program Day Exercise
+// Program Day Exercise - FIXED naming
 model ProgramDayExercise {
   id           String     @id @default(cuid())
   workoutDayId String
@@ -192,7 +194,7 @@ model ActiveProgram {
   nextWorkoutDate    DateTime?
   completedWorkouts  String[] // IDs of completed workout days
   progressPercentage Float          @default(0)
-  streak             Int             @default(0)
+  streak             Int            @default(0)
   isActive           Boolean        @default(true)
 
   @@unique([userId, isActive], name: "unique_active_program_per_user")

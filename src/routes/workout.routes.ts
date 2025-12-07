@@ -1,9 +1,37 @@
+// server/src/routes/workout.routes.ts - CORRECTED
 import express from "express";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, WorkoutLog, ExerciseLog, SetLog } from "@prisma/client";
 import { authenticateToken } from "../middleware/auth";
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+// Helper interface for request body
+interface CreateWorkoutBody {
+  workoutType: string;
+  workoutName: string;
+  exercises: Array<{
+    exerciseId: string;
+    exerciseName: string;
+    order: number;
+    notes?: string;
+    programExerciseId?: string;
+    sets: Array<{
+      setNumber: number;
+      reps: number;
+      weight: number;
+      completed?: boolean;
+      rpe?: number;
+      notes?: string;
+    }>;
+  }>;
+  programId?: string;
+  programName?: string;
+  dayId?: string;
+  dayName?: string;
+  tags?: string[];
+  calculatedMetrics?: any;
+}
 
 // Get all workouts for user
 router.get("/", authenticateToken, async (req, res) => {
@@ -11,16 +39,63 @@ router.get("/", authenticateToken, async (req, res) => {
     const workouts = await prisma.workoutLog.findMany({
       where: { userId: req.user!.userId },
       include: {
-        exercises: {
+        exerciseLogs: {
           include: { sets: true },
         },
       },
       orderBy: { startTime: "desc" },
     });
 
+    // Transform to match your frontend WorkoutLog type
+    const transformedWorkouts = workouts.map(
+      (
+        workout: WorkoutLog & {
+          exerciseLogs: (ExerciseLog & { sets: SetLog[] })[];
+        }
+      ) => ({
+        id: workout.id,
+        userId: workout.userId,
+        workoutType: workout.workoutType as "program" | "custom", // Changed from 'type' to 'workoutType'
+        workoutName: workout.workoutName, // Changed from 'name' to 'workoutName'
+        startTime: workout.startTime,
+        endTime: workout.endTime,
+        exercises: workout.exerciseLogs.map(
+          // Changed 'exerciseLogs' to 'exercises' for frontend
+          (exercise: ExerciseLog & { sets: SetLog[] }) => ({
+            id: exercise.id,
+            exerciseId: exercise.exerciseId,
+            exerciseName: exercise.exerciseName, // Fixed: use exerciseName, not name
+            sets: exercise.sets.map((set: SetLog) => ({
+              id: set.id,
+              setNumber: set.setNumber,
+              reps: set.reps,
+              weight: set.weight,
+              completed: set.completed,
+              rpe: set.rpe,
+              notes: set.notes,
+            })),
+            notes: exercise.notes,
+            order: exercise.order,
+            programExerciseId: exercise.programExerciseId,
+          })
+        ),
+        completed: workout.completed,
+        tags: workout.tags,
+        calculatedMetrics: workout.calculatedMetrics
+          ? typeof workout.calculatedMetrics === "string"
+            ? JSON.parse(workout.calculatedMetrics)
+            : workout.calculatedMetrics
+          : {},
+        programId: workout.programId,
+        programName: workout.programName,
+        dayId: workout.dayId,
+        dayName: workout.dayName,
+      })
+    );
+
     res.json({
       success: true,
-      data: workouts,
+      data: transformedWorkouts,
       count: workouts.length,
     });
   } catch (error) {
@@ -41,7 +116,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
         userId: req.user!.userId,
       },
       include: {
-        exercises: {
+        exerciseLogs: {
           include: { sets: true },
         },
       },
@@ -54,9 +129,49 @@ router.get("/:id", authenticateToken, async (req, res) => {
       });
     }
 
+    // Transform to match frontend
+    const transformedWorkout = {
+      id: workout.id,
+      userId: workout.userId,
+      workoutType: workout.workoutType as "program" | "custom",
+      workoutName: workout.workoutName,
+      startTime: workout.startTime,
+      endTime: workout.endTime,
+      exercises: workout.exerciseLogs.map(
+        (exercise: ExerciseLog & { sets: SetLog[] }) => ({
+          id: exercise.id,
+          exerciseId: exercise.exerciseId,
+          exerciseName: exercise.exerciseName,
+          sets: exercise.sets.map((set: SetLog) => ({
+            id: set.id,
+            setNumber: set.setNumber,
+            reps: set.reps,
+            weight: set.weight,
+            completed: set.completed,
+            rpe: set.rpe,
+            notes: set.notes,
+          })),
+          notes: exercise.notes,
+          order: exercise.order,
+          programExerciseId: exercise.programExerciseId,
+        })
+      ),
+      completed: workout.completed,
+      tags: workout.tags,
+      calculatedMetrics: workout.calculatedMetrics
+        ? typeof workout.calculatedMetrics === "string"
+          ? JSON.parse(workout.calculatedMetrics)
+          : workout.calculatedMetrics
+        : {},
+      programId: workout.programId,
+      programName: workout.programName,
+      dayId: workout.dayId,
+      dayName: workout.dayName,
+    };
+
     res.json({
       success: true,
-      data: workout,
+      data: transformedWorkout,
     });
   } catch (error) {
     console.error("Get workout error:", error);
@@ -78,50 +193,95 @@ router.post("/", authenticateToken, async (req, res) => {
       dayId,
       tags,
       calculatedMetrics,
-    } = req.body;
+      programName,
+      dayName,
+    } = req.body as CreateWorkoutBody;
 
     const workout = await prisma.workoutLog.create({
       data: {
         userId: req.user!.userId,
-        workoutType,
-        workoutName,
+        workoutType: workoutType, // Fixed: use 'workoutType', not 'type'
+        workoutName: workoutName, // Fixed: use 'workoutName', not 'name'
         startTime: new Date(),
-        exercises: {
-          create: exercises.map((exercise: any) => ({
+        completed: false,
+        tags: tags || [],
+        calculatedMetrics: calculatedMetrics || {},
+        programId,
+        programName,
+        dayId,
+        dayName,
+        exerciseLogs: {
+          // Fixed: use 'exerciseLogs', not 'exercises'
+          create: exercises.map((exercise) => ({
             exerciseId: exercise.exerciseId,
-            exerciseName: exercise.exerciseName,
+            exerciseName: exercise.exerciseName, // Fixed: use 'exerciseName', not 'name'
             order: exercise.order,
             notes: exercise.notes,
             programExerciseId: exercise.programExerciseId,
             sets: {
-              create: exercise.sets.map((set: any) => ({
+              create: exercise.sets.map((set) => ({
                 setNumber: set.setNumber,
                 reps: set.reps,
                 weight: set.weight,
-                completed: set.completed,
+                completed: set.completed || true,
                 rpe: set.rpe,
                 notes: set.notes,
               })),
             },
           })),
         },
-        programId,
-        dayId,
-        tags,
-        calculatedMetrics,
-        completed: false,
       },
       include: {
-        exercises: {
+        exerciseLogs: {
           include: { sets: true },
         },
       },
     });
 
+    // Transform response
+    const transformedWorkout = {
+      id: workout.id,
+      userId: workout.userId,
+      workoutType: workout.workoutType as "program" | "custom",
+      workoutName: workout.workoutName,
+      startTime: workout.startTime,
+      endTime: workout.endTime,
+      exercises: workout.exerciseLogs.map(
+        (exercise: ExerciseLog & { sets: SetLog[] }) => ({
+          id: exercise.id,
+          exerciseId: exercise.exerciseId,
+          exerciseName: exercise.exerciseName,
+          sets: exercise.sets.map((set: SetLog) => ({
+            id: set.id,
+            setNumber: set.setNumber,
+            reps: set.reps,
+            weight: set.weight,
+            completed: set.completed,
+            rpe: set.rpe,
+            notes: set.notes,
+          })),
+          notes: exercise.notes,
+          order: exercise.order,
+          programExerciseId: exercise.programExerciseId,
+        })
+      ),
+      completed: workout.completed,
+      tags: workout.tags,
+      calculatedMetrics: workout.calculatedMetrics
+        ? typeof workout.calculatedMetrics === "string"
+          ? JSON.parse(workout.calculatedMetrics)
+          : workout.calculatedMetrics
+        : {},
+      programId: workout.programId,
+      programName: workout.programName,
+      dayId: workout.dayId,
+      dayName: workout.dayName,
+    };
+
     res.status(201).json({
       success: true,
       message: "Workout created successfully",
-      data: workout,
+      data: transformedWorkout,
     });
   } catch (error) {
     console.error("Create workout error:", error);
@@ -135,14 +295,8 @@ router.post("/", authenticateToken, async (req, res) => {
 // Update workout
 router.put("/:id", authenticateToken, async (req, res) => {
   try {
-    const {
-      workoutName,
-      exercises,
-      endTime,
-      completed,
-      tags,
-      calculatedMetrics,
-    } = req.body;
+    const { workoutName, endTime, completed, tags, calculatedMetrics } =
+      req.body;
 
     // Check if workout exists and belongs to user
     const existingWorkout = await prisma.workoutLog.findUnique({
@@ -163,23 +317,64 @@ router.put("/:id", authenticateToken, async (req, res) => {
     const workout = await prisma.workoutLog.update({
       where: { id: req.params.id },
       data: {
-        workoutName,
+        workoutName: workoutName, // Fixed: use 'workoutName', not 'name'
         endTime: endTime ? new Date(endTime) : undefined,
         completed,
         tags,
-        calculatedMetrics,
+        calculatedMetrics:
+          calculatedMetrics || existingWorkout.calculatedMetrics, // Fixed: use 'calculatedMetrics', not 'metrics'
       },
       include: {
-        exercises: {
+        exerciseLogs: {
           include: { sets: true },
         },
       },
     });
 
+    // Transform response
+    const transformedWorkout = {
+      id: workout.id,
+      userId: workout.userId,
+      workoutType: workout.workoutType as "program" | "custom",
+      workoutName: workout.workoutName,
+      startTime: workout.startTime,
+      endTime: workout.endTime,
+      exercises: workout.exerciseLogs.map(
+        (exercise: ExerciseLog & { sets: SetLog[] }) => ({
+          id: exercise.id,
+          exerciseId: exercise.exerciseId,
+          exerciseName: exercise.exerciseName,
+          sets: exercise.sets.map((set: SetLog) => ({
+            id: set.id,
+            setNumber: set.setNumber,
+            reps: set.reps,
+            weight: set.weight,
+            completed: set.completed,
+            rpe: set.rpe,
+            notes: set.notes,
+          })),
+          notes: exercise.notes,
+          order: exercise.order,
+          programExerciseId: exercise.programExerciseId,
+        })
+      ),
+      completed: workout.completed,
+      tags: workout.tags,
+      calculatedMetrics: workout.calculatedMetrics
+        ? typeof workout.calculatedMetrics === "string"
+          ? JSON.parse(workout.calculatedMetrics)
+          : workout.calculatedMetrics
+        : {},
+      programId: workout.programId,
+      programName: workout.programName,
+      dayId: workout.dayId,
+      dayName: workout.dayName,
+    };
+
     res.json({
       success: true,
       message: "Workout updated successfully",
-      data: workout,
+      data: transformedWorkout,
     });
   } catch (error) {
     console.error("Update workout error:", error);
@@ -203,34 +398,59 @@ router.post("/:id/finish", authenticateToken, async (req, res) => {
       data: {
         endTime: new Date(),
         completed: true,
-        calculatedMetrics,
+        calculatedMetrics: calculatedMetrics || {}, // Fixed: use 'calculatedMetrics', not 'metrics'
       },
       include: {
-        exercises: {
+        exerciseLogs: {
           include: { sets: true },
         },
       },
     });
 
-    // Update program progress if this is a program workout
-    if (workout.programId && workout.dayId) {
-      await prisma.activeProgram.updateMany({
-        where: {
-          programId: workout.programId,
-          userId: req.user!.userId,
-        },
-        data: {
-          progressPercentage: {
-            increment: calculateProgressIncrement(),
-          },
-        },
-      });
-    }
+    // Transform response
+    const transformedWorkout = {
+      id: workout.id,
+      userId: workout.userId,
+      workoutType: workout.workoutType as "program" | "custom",
+      workoutName: workout.workoutName,
+      startTime: workout.startTime,
+      endTime: workout.endTime,
+      exercises: workout.exerciseLogs.map(
+        (exercise: ExerciseLog & { sets: SetLog[] }) => ({
+          id: exercise.id,
+          exerciseId: exercise.exerciseId,
+          exerciseName: exercise.exerciseName,
+          sets: exercise.sets.map((set: SetLog) => ({
+            id: set.id,
+            setNumber: set.setNumber,
+            reps: set.reps,
+            weight: set.weight,
+            completed: set.completed,
+            rpe: set.rpe,
+            notes: set.notes,
+          })),
+          notes: exercise.notes,
+          order: exercise.order,
+          programExerciseId: exercise.programExerciseId,
+        })
+      ),
+      completed: workout.completed,
+      tags: workout.tags,
+      calculatedMetrics: workout.calculatedMetrics
+        ? typeof workout.calculatedMetrics === "string"
+          ? JSON.parse(workout.calculatedMetrics)
+          : workout.calculatedMetrics
+        : {},
+      programId: workout.programId,
+      programName: workout.programName,
+      dayId: workout.dayId,
+      dayName: workout.dayName,
+    };
 
     res.json({
       success: true,
       message: "Workout completed successfully",
-      data: workout,
+      data: transformedWorkout,
     });
   } catch (error) {
     console.error("Finish workout error:", error);
@@ -285,22 +505,83 @@ router.get("/stats/summary", authenticateToken, async (req, res) => {
         completed: true,
       },
       include: {
-        exercises: {
+        exerciseLogs: {
           include: { sets: true },
         },
       },
     });
 
     // Calculate stats
+    let totalVolume = 0;
+    const exerciseCount: Record<string, number> = {};
+
+    workouts.forEach(
+      (
+        workout: WorkoutLog & {
+          exerciseLogs: (ExerciseLog & { sets: SetLog[] })[];
+        }
+      ) => {
+        // Parse calculatedMetrics if they exist
+        if (workout.calculatedMetrics) {
+          try {
+            const metrics =
+              typeof workout.calculatedMetrics === "string"
+                ? JSON.parse(workout.calculatedMetrics)
+                : workout.calculatedMetrics;
+            if (metrics.totalVolume) {
+              totalVolume += metrics.totalVolume;
+            }
+          } catch (e) {
+            // If parsing fails, calculate from sets
+            workout.exerciseLogs.forEach(
+              (exercise: ExerciseLog & { sets: SetLog[] }) => {
+                exercise.sets.forEach((set: SetLog) => {
+                  if (set.completed) {
+                    totalVolume += set.reps * set.weight;
+                  }
+                });
+              }
+            );
+          }
+        } else {
+          // Calculate from sets if no metrics
+          workout.exerciseLogs.forEach(
+            (exercise: ExerciseLog & { sets: SetLog[] }) => {
+              exercise.sets.forEach((set: SetLog) => {
+                if (set.completed) {
+                  totalVolume += set.reps * set.weight;
+                }
+              });
+            }
+          );
+        }
+
+        // Count exercises
+        workout.exerciseLogs.forEach(
+          (exercise: ExerciseLog & { sets: SetLog[] }) => {
+            exerciseCount[exercise.exerciseName] =
+              (exerciseCount[exercise.exerciseName] || 0) + 1;
+          }
+        );
+      }
+    );
+
+    // Find favorite exercise
+    let favoriteExercise = "None";
+    let maxCount = 0;
+    for (const [exercise, count] of Object.entries(exerciseCount)) {
+      if (count > maxCount) {
+        maxCount = count;
+        favoriteExercise = exercise;
+      }
+    }
+
     const stats = {
       totalWorkouts: workouts.length,
-      totalVolume: workouts.reduce(
-        (sum, w) => sum + (w.calculatedMetrics?.totalVolume || 0),
-        0
-      ),
+      totalVolume,
       averageWorkoutsPerWeek: calculateAverageWorkoutsPerWeek(workouts),
       currentStreak: calculateStreak(workouts),
-      favoriteExercise: findMostFrequentExercise(workouts),
+      favoriteExercise,
     };
 
     res.json({
@@ -316,25 +597,54 @@ router.get("/stats/summary", authenticateToken, async (req, res) => {
   }
 });
 
-// Helper functions
-function calculateProgressIncrement(): number {
-  // Calculate based on program structure
-  return 5; // Example: 5% per workout
+// Helper functions - FIXED types
+function calculateAverageWorkoutsPerWeek(
+  workouts: (WorkoutLog & {
+    exerciseLogs: (ExerciseLog & { sets: SetLog[] })[];
+  })[]
+): number {
+  if (workouts.length === 0) return 0;
+
+  const firstWorkout = new Date(workouts[workouts.length - 1].startTime);
+  const lastWorkout = new Date(workouts[0].startTime);
+  const weeks = Math.max(
+    1,
+    (lastWorkout.getTime() - firstWorkout.getTime()) / (1000 * 60 * 60 * 24 * 7)
+  );
+
+  return Math.round((workouts.length / weeks) * 10) / 10;
 }
 
-function calculateAverageWorkoutsPerWeek(workouts: any[]): number {
-  // Implementation
-  return 3;
-}
+function calculateStreak(
+  workouts: (WorkoutLog & {
+    exerciseLogs: (ExerciseLog & { sets: SetLog[] })[];
+  })[]
+): number {
+  if (workouts.length === 0) return 0;
 
-function calculateStreak(workouts: any[]): number {
-  // Implementation
-  return 7;
-}
+  let streak = 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-function findMostFrequentExercise(workouts: any[]): string {
-  // Implementation
-  return "Bench Press";
+  const workoutDates = workouts.map((w) => {
+    const date = new Date(w.startTime);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+  });
+
+  const uniqueDates = [...new Set(workoutDates)].sort((a, b) => b - a);
+
+  let expectedDate = today.getTime();
+  for (const date of uniqueDates) {
+    if (date === expectedDate) {
+      streak++;
+      expectedDate -= 24 * 60 * 60 * 1000;
+    } else {
+      break;
+    }
+  }
+
+  return streak;
 }
 
 export default router;

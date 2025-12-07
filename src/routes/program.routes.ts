@@ -15,19 +15,42 @@ router.get("/", authenticateToken, async (req, res) => {
       },
       include: {
         workoutDays: {
-          include: { exercises: true },
+          include: { programDayExercises: true },
           orderBy: { order: "asc" },
         },
       },
       orderBy: { createdAt: "desc" },
     });
 
+    // Transform to match frontend WorkoutDay type
+    const transformedPrograms = programs.map((program) => ({
+      ...program,
+      isCreator: program.createdBy === req.user!.userId,
+      workoutDays: program.workoutDays.map((day) => ({
+        id: day.id,
+        name: day.name,
+        description: day.description,
+        dayNumber: day.dayNumber,
+        order: day.order,
+        estimatedDuration: day.estimatedDuration,
+        exercises: day.programDayExercises.map((ex) => ({
+          id: ex.id,
+          exerciseId: ex.exerciseId,
+          exerciseName: ex.exerciseName,
+          sets: ex.sets,
+          repType: ex.repType,
+          reps: ex.reps,
+          maxReps: ex.maxReps,
+          restInterval: ex.restInterval,
+          notes: ex.notes,
+          order: ex.order,
+        })),
+      })),
+    }));
+
     res.json({
       success: true,
-      data: programs.map((program) => ({
-        ...program,
-        isCreator: program.createdBy === req.user!.userId,
-      })),
+      data: transformedPrograms,
     });
   } catch (error) {
     console.error("Get programs error:", error);
@@ -45,7 +68,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
       where: { id: req.params.id },
       include: {
         workoutDays: {
-          include: { exercises: true },
+          include: { programDayExercises: true },
           orderBy: { order: "asc" },
         },
       },
@@ -66,12 +89,35 @@ router.get("/:id", authenticateToken, async (req, res) => {
       });
     }
 
+    // Transform to match frontend
+    const transformedProgram = {
+      ...program,
+      isCreator: program.createdBy === req.user!.userId,
+      workoutDays: program.workoutDays.map((day) => ({
+        id: day.id,
+        name: day.name,
+        description: day.description,
+        dayNumber: day.dayNumber,
+        order: day.order,
+        estimatedDuration: day.estimatedDuration,
+        exercises: day.programDayExercises.map((ex) => ({
+          id: ex.id,
+          exerciseId: ex.exerciseId,
+          exerciseName: ex.exerciseName,
+          sets: ex.sets,
+          repType: ex.repType,
+          reps: ex.reps,
+          maxReps: ex.maxReps,
+          restInterval: ex.restInterval,
+          notes: ex.notes,
+          order: ex.order,
+        })),
+      })),
+    };
+
     res.json({
       success: true,
-      data: {
-        ...program,
-        isCreator: program.createdBy === req.user!.userId,
-      },
+      data: transformedProgram,
     });
   } catch (error) {
     console.error("Get program error:", error);
@@ -131,7 +177,7 @@ router.post("/", authenticateToken, async (req, res) => {
             dayNumber: day.dayNumber,
             order: day.order,
             estimatedDuration: day.estimatedDuration,
-            exercises: {
+            programDayExercises: {
               create: day.exercises.map((exercise: any) => ({
                 exerciseId: exercise.exerciseId,
                 exerciseName: exercise.exerciseName,
@@ -149,7 +195,7 @@ router.post("/", authenticateToken, async (req, res) => {
       },
       include: {
         workoutDays: {
-          include: { exercises: true },
+          include: { programDayExercises: true },
         },
       },
     });
@@ -168,7 +214,7 @@ router.post("/", authenticateToken, async (req, res) => {
   }
 });
 
-// Update program (basic fields only - no workoutDays for now)
+// Update program with full functionality including workout days
 router.put("/:id", authenticateToken, async (req, res) => {
   try {
     console.log("Update program request:", {
@@ -180,6 +226,11 @@ router.put("/:id", authenticateToken, async (req, res) => {
     // First, verify the program exists and user has permission
     const program = await prisma.workoutProgram.findUnique({
       where: { id: req.params.id },
+      include: {
+        workoutDays: {
+          include: { programDayExercises: true },
+        },
+      },
     });
 
     if (!program) {
@@ -209,6 +260,7 @@ router.put("/:id", authenticateToken, async (req, res) => {
       goal,
       daysPerWeek,
       durationWeeks,
+      workoutDays,
       tags,
       isPublic,
       resourceLinks,
@@ -220,48 +272,140 @@ router.put("/:id", authenticateToken, async (req, res) => {
       goal,
       daysPerWeek,
       durationWeeks,
+      workoutDaysCount: workoutDays?.length || 0,
     });
 
-    // Update only basic fields for now
-    const updateData: any = {
-      name,
-      description,
-      difficulty,
-      goal,
-      daysPerWeek,
-      durationWeeks,
-      tags,
-      isPublic,
-      resourceLinks,
-      updatedAt: new Date(),
-    };
+    // Start a transaction to update program and related data
+    const updatedProgram = await prisma.$transaction(async (tx) => {
+      // Update basic program fields
+      const updateData: any = {
+        name,
+        description,
+        difficulty,
+        goal,
+        daysPerWeek,
+        durationWeeks,
+        tags,
+        isPublic,
+        resourceLinks,
+        updatedAt: new Date(),
+      };
 
-    // Remove undefined fields
-    Object.keys(updateData).forEach((key) => {
-      if (updateData[key] === undefined) {
-        delete updateData[key];
+      // Remove undefined fields
+      Object.keys(updateData).forEach((key) => {
+        if (updateData[key] === undefined) {
+          delete updateData[key];
+        }
+      });
+
+      // Update program
+      await tx.workoutProgram.update({
+        where: { id: req.params.id },
+        data: updateData,
+      });
+
+      // If workoutDays are provided, update them
+      if (workoutDays && Array.isArray(workoutDays)) {
+        // Delete existing workout days and exercises first
+        await tx.programDayExercise.deleteMany({
+          where: {
+            workoutDay: {
+              programId: req.params.id,
+            },
+          },
+        });
+
+        await tx.workoutDay.deleteMany({
+          where: { programId: req.params.id },
+        });
+
+        // Create new workout days with exercises
+        for (const day of workoutDays) {
+          await tx.workoutDay.create({
+            data: {
+              programId: req.params.id,
+              name: day.name,
+              description: day.description,
+              dayNumber: day.dayNumber,
+              order: day.order,
+              estimatedDuration: day.estimatedDuration,
+              programDayExercises: {
+                create: day.exercises.map((exercise: any) => ({
+                  exerciseId: exercise.exerciseId,
+                  exerciseName: exercise.exerciseName,
+                  sets: exercise.sets,
+                  repType: exercise.repType,
+                  reps: exercise.reps,
+                  maxReps: exercise.maxReps,
+                  restInterval: exercise.restInterval,
+                  notes: exercise.notes,
+                  order: exercise.order,
+                })),
+              },
+            },
+          });
+        }
       }
-    });
 
-    console.log("Final update data:", updateData);
-
-    const updatedProgram = await prisma.workoutProgram.update({
-      where: { id: req.params.id },
-      data: updateData,
-      include: {
-        workoutDays: {
-          include: { exercises: true },
-          orderBy: { order: "asc" },
+      // Return the updated program with all relations
+      const result = await tx.workoutProgram.findUnique({
+        where: { id: req.params.id },
+        include: {
+          workoutDays: {
+            include: { programDayExercises: true },
+            orderBy: { order: "asc" },
+          },
         },
-      },
+      });
+
+      // Add explicit null check
+      if (!result) {
+        throw new Error("Failed to retrieve updated program");
+      }
+
+      return result;
     });
+
+    // Add null check here too
+    if (!updatedProgram) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update program: Could not retrieve updated data",
+      });
+    }
+
+    // Transform to match frontend
+    const transformedProgram = {
+      ...updatedProgram,
+      isCreator: updatedProgram.createdBy === req.user!.userId,
+      workoutDays: updatedProgram.workoutDays.map((day) => ({
+        id: day.id,
+        name: day.name,
+        description: day.description,
+        dayNumber: day.dayNumber,
+        order: day.order,
+        estimatedDuration: day.estimatedDuration,
+        exercises: day.programDayExercises.map((ex) => ({
+          id: ex.id,
+          exerciseId: ex.exerciseId,
+          exerciseName: ex.exerciseName,
+          sets: ex.sets,
+          repType: ex.repType,
+          reps: ex.reps,
+          maxReps: ex.maxReps,
+          restInterval: ex.restInterval,
+          notes: ex.notes,
+          order: ex.order,
+        })),
+      })),
+    };
 
     console.log("Program updated successfully:", updatedProgram.id);
 
     res.json({
       success: true,
       message: "Program updated successfully",
-      data: updatedProgram,
+      data: transformedProgram,
     });
   } catch (error: any) {
     console.error("Update program error:", error);
@@ -269,6 +413,7 @@ router.put("/:id", authenticateToken, async (req, res) => {
       message: error.message,
       code: error.code,
       meta: error.meta,
+      stack: error.stack,
     });
 
     let errorMessage = "Failed to update program";
@@ -359,7 +504,7 @@ router.post("/:id/start", authenticateToken, async (req, res) => {
         program: {
           include: {
             workoutDays: {
-              include: { exercises: true },
+              include: { programDayExercises: true },
             },
           },
         },
@@ -392,7 +537,7 @@ router.get("/active/current", authenticateToken, async (req, res) => {
         program: {
           include: {
             workoutDays: {
-              include: { exercises: true },
+              include: { programDayExercises: true },
             },
           },
         },
@@ -407,9 +552,37 @@ router.get("/active/current", authenticateToken, async (req, res) => {
       });
     }
 
+    // Transform program data
+    const transformedActiveProgram = {
+      ...activeProgram,
+      program: {
+        ...activeProgram.program,
+        workoutDays: activeProgram.program.workoutDays.map((day) => ({
+          id: day.id,
+          name: day.name,
+          description: day.description,
+          dayNumber: day.dayNumber,
+          order: day.order,
+          estimatedDuration: day.estimatedDuration,
+          exercises: day.programDayExercises.map((ex) => ({
+            id: ex.id,
+            exerciseId: ex.exerciseId,
+            exerciseName: ex.exerciseName,
+            sets: ex.sets,
+            repType: ex.repType,
+            reps: ex.reps,
+            maxReps: ex.maxReps,
+            restInterval: ex.restInterval,
+            notes: ex.notes,
+            order: ex.order,
+          })),
+        })),
+      },
+    };
+
     res.json({
       success: true,
-      data: activeProgram,
+      data: transformedActiveProgram,
     });
   } catch (error) {
     console.error("Get active program error:", error);

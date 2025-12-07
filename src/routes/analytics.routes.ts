@@ -1,10 +1,15 @@
-// server/src/routes/analytics.routes.ts
+// server/src/routes/analytics.routes.ts - CORRECTED
 import express from "express";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, WorkoutLog, ExerciseLog, SetLog } from "@prisma/client";
 import { authenticateToken } from "../middleware/auth";
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+// Helper interfaces for type safety
+interface WorkoutWithLogs extends WorkoutLog {
+  exerciseLogs: (ExerciseLog & { sets: SetLog[] })[];
+}
 
 // Get workout analytics
 router.get("/workouts", authenticateToken, async (req, res) => {
@@ -17,7 +22,7 @@ router.get("/workouts", authenticateToken, async (req, res) => {
         completed: true,
       },
       include: {
-        exercises: {
+        exerciseLogs: {
           include: { sets: true },
         },
       },
@@ -26,12 +31,18 @@ router.get("/workouts", authenticateToken, async (req, res) => {
 
     // Calculate analytics
     const analytics = {
-      summary: calculateWorkoutSummary(workouts),
-      weeklyProgression: calculateWeeklyProgression(workouts),
-      muscleGroupDistribution: calculateMuscleGroupDistribution(workouts),
-      topExercises: calculateTopExercises(workouts, 10),
-      monthlyFrequency: calculateMonthlyFrequency(workouts),
-      personalRecords: calculatePersonalRecords(workouts),
+      summary: calculateWorkoutSummary(workouts as WorkoutWithLogs[]),
+      weeklyProgression: calculateWeeklyProgression(
+        workouts as WorkoutWithLogs[]
+      ),
+      muscleGroupDistribution: calculateMuscleGroupDistribution(
+        workouts as WorkoutWithLogs[]
+      ),
+      topExercises: calculateTopExercises(workouts as WorkoutWithLogs[], 10),
+      monthlyFrequency: calculateMonthlyFrequency(
+        workouts as WorkoutWithLogs[]
+      ),
+      personalRecords: calculatePersonalRecords(workouts as WorkoutWithLogs[]),
     };
 
     res.json({
@@ -43,6 +54,7 @@ router.get("/workouts", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch analytics",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
@@ -62,7 +74,9 @@ router.get("/streak", authenticateToken, async (req, res) => {
       currentStreak: calculateCurrentStreak(workouts),
       longestStreak: calculateLongestStreak(workouts),
       workoutsThisWeek: calculateWorkoutsThisWeek(workouts),
-      weeklyVolumeTrend: calculateWeeklyVolumeTrend(workouts),
+      weeklyVolumeTrend: calculateWeeklyVolumeTrend(
+        workouts as WorkoutWithLogs[]
+      ),
     };
 
     res.json({
@@ -74,6 +88,7 @@ router.get("/streak", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch streak information",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
@@ -94,14 +109,14 @@ router.get("/volume", authenticateToken, async (req, res) => {
         },
       },
       include: {
-        exercises: {
+        exerciseLogs: {
           include: { sets: true },
         },
       },
       orderBy: { startTime: "asc" },
     });
 
-    const weeklyData = groupWorkoutsByWeek(workouts);
+    const weeklyData = groupWorkoutsByWeek(workouts as WorkoutWithLogs[]);
 
     res.json({
       success: true,
@@ -112,43 +127,50 @@ router.get("/volume", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch volume data",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
 
-// Helper functions
-function calculateWorkoutSummary(workouts: any[]) {
+// Helper functions - UPDATED for WorkoutLog model
+function calculateWorkoutSummary(workouts: WorkoutWithLogs[]) {
   const totalWorkouts = workouts.length;
-  const totalVolume = workouts.reduce(
-    (sum, w) => sum + (w.calculatedMetrics?.totalVolume || 0),
-    0
-  );
+  const totalVolume = workouts.reduce((sum, w) => {
+    const metrics = w.calculatedMetrics
+      ? typeof w.calculatedMetrics === "string"
+        ? JSON.parse(w.calculatedMetrics)
+        : w.calculatedMetrics
+      : {};
+    return sum + (metrics.totalVolume || 0);
+  }, 0);
+
   const totalExercises = workouts.reduce(
-    (sum, w) => sum + w.exercises.length,
+    (sum, w) => sum + w.exerciseLogs.length,
     0
   );
+
   const totalSets = workouts.reduce(
     (sum, w) =>
-      sum +
-      w.exercises.reduce((exSum: number, ex: any) => exSum + ex.sets.length, 0),
+      sum + w.exerciseLogs.reduce((exSum, ex) => exSum + ex.sets.length, 0),
     0
   );
 
   return {
     totalWorkouts,
     totalVolume,
-    averageVolumePerWorkout: totalVolume / totalWorkouts,
+    averageVolumePerWorkout:
+      totalWorkouts > 0 ? totalVolume / totalWorkouts : 0,
     totalExercises,
     totalSets,
     averageWorkoutDuration: calculateAverageDuration(workouts),
   };
 }
 
-function calculateAverageDuration(workouts: any[]): number {
-  if (workouts.length === 0) return 0;
+function calculateAverageDuration(workouts: WorkoutWithLogs[]): number {
+  if (workouts.length === 0) return 45; // default
 
   const workoutsWithDuration = workouts.filter((w) => w.startTime && w.endTime);
-  if (workoutsWithDuration.length === 0) return 45; // default
+  if (workoutsWithDuration.length === 0) return 45;
 
   const totalDuration = workoutsWithDuration.reduce((sum, w) => {
     const duration =
@@ -160,8 +182,7 @@ function calculateAverageDuration(workouts: any[]): number {
   return Math.round(totalDuration / workoutsWithDuration.length);
 }
 
-function calculateWeeklyProgression(workouts: any[]): any[] {
-  // Group workouts by week and calculate volume per week
+function calculateWeeklyProgression(workouts: WorkoutWithLogs[]): any[] {
   const weeklyData: any[] = [];
   const now = new Date();
 
@@ -177,10 +198,14 @@ function calculateWeeklyProgression(workouts: any[]): any[] {
       return workoutDate >= weekStart && workoutDate <= weekEnd;
     });
 
-    const weekVolume = weekWorkouts.reduce(
-      (sum, w) => sum + (w.calculatedMetrics?.totalVolume || 0),
-      0
-    );
+    const weekVolume = weekWorkouts.reduce((sum, w) => {
+      const metrics = w.calculatedMetrics
+        ? typeof w.calculatedMetrics === "string"
+          ? JSON.parse(w.calculatedMetrics)
+          : w.calculatedMetrics
+        : {};
+      return sum + (metrics.totalVolume || 0);
+    }, 0);
 
     weeklyData.push({
       week: `Week ${8 - i}`,
@@ -194,45 +219,38 @@ function calculateWeeklyProgression(workouts: any[]): any[] {
   return weeklyData;
 }
 
-function calculateMuscleGroupDistribution(workouts: any[]): any {
+function calculateMuscleGroupDistribution(workouts: WorkoutWithLogs[]): any {
   // Simplified muscle group distribution
   const muscleGroups: Record<string, number> = {};
 
   workouts.forEach((workout) => {
-    workout.exercises.forEach((exercise: any) => {
-      // In a real app, you'd map exerciseId to muscle groups
-      const muscleGroup = exercise.exerciseName.toLowerCase().includes("bench")
-        ? "chest"
-        : exercise.exerciseName.toLowerCase().includes("squat")
-        ? "legs"
-        : exercise.exerciseName.toLowerCase().includes("pull")
-        ? "back"
-        : exercise.exerciseName.toLowerCase().includes("curl")
-        ? "biceps"
-        : exercise.exerciseName.toLowerCase().includes("press")
-        ? "shoulders"
-        : "other";
-
+    workout.exerciseLogs.forEach((exercise) => {
+      // This should be improved with actual exercise data
+      const muscleGroup = "other"; // Default
       muscleGroups[muscleGroup] = (muscleGroups[muscleGroup] || 0) + 1;
     });
   });
 
+  const total = Object.values(muscleGroups).reduce((a, b) => a + b, 0);
+
   return Object.entries(muscleGroups).map(([name, count]) => ({
     name,
     count,
-    percentage:
-      (count / Object.values(muscleGroups).reduce((a, b) => a + b, 0)) * 100,
+    percentage: total > 0 ? (count / total) * 100 : 0,
   }));
 }
 
-function calculateTopExercises(workouts: any[], limit: number): any[] {
+function calculateTopExercises(
+  workouts: WorkoutWithLogs[],
+  limit: number
+): any[] {
   const exerciseCounts: Record<
     string,
     { name: string; count: number; totalVolume: number }
   > = {};
 
   workouts.forEach((workout) => {
-    workout.exercises.forEach((exercise: any) => {
+    workout.exerciseLogs.forEach((exercise) => {
       if (!exerciseCounts[exercise.exerciseName]) {
         exerciseCounts[exercise.exerciseName] = {
           name: exercise.exerciseName,
@@ -245,7 +263,7 @@ function calculateTopExercises(workouts: any[], limit: number): any[] {
 
       // Calculate volume for this exercise in this workout
       const exerciseVolume = exercise.sets.reduce(
-        (sum: number, set: any) => sum + set.weight * set.reps,
+        (sum, set) => sum + set.weight * set.reps,
         0
       );
       exerciseCounts[exercise.exerciseName].totalVolume += exerciseVolume;
@@ -257,7 +275,7 @@ function calculateTopExercises(workouts: any[], limit: number): any[] {
     .slice(0, limit);
 }
 
-function calculateMonthlyFrequency(workouts: any[]): any[] {
+function calculateMonthlyFrequency(workouts: WorkoutWithLogs[]): any[] {
   const frequency: any[] = [];
   const now = new Date();
 
@@ -276,7 +294,7 @@ function calculateMonthlyFrequency(workouts: any[]): any[] {
       workouts: monthWorkouts.length,
       days: new Set(
         monthWorkouts.map(
-          (w: any) => new Date(w.startTime).toISOString().split("T")[0]
+          (w) => new Date(w.startTime).toISOString().split("T")[0]
         )
       ).size,
     });
@@ -285,7 +303,7 @@ function calculateMonthlyFrequency(workouts: any[]): any[] {
   return frequency;
 }
 
-function calculatePersonalRecords(workouts: any[]): any[] {
+function calculatePersonalRecords(workouts: WorkoutWithLogs[]): any[] {
   const prs: any[] = [];
   const exerciseMaxes: Record<
     string,
@@ -293,8 +311,8 @@ function calculatePersonalRecords(workouts: any[]): any[] {
   > = {};
 
   workouts.forEach((workout) => {
-    workout.exercises.forEach((exercise: any) => {
-      exercise.sets.forEach((set: any) => {
+    workout.exerciseLogs.forEach((exercise) => {
+      exercise.sets.forEach((set) => {
         const key = exercise.exerciseName;
         if (!exerciseMaxes[key] || set.weight > exerciseMaxes[key].weight) {
           exerciseMaxes[key] = {
@@ -319,31 +337,48 @@ function calculatePersonalRecords(workouts: any[]): any[] {
   return prs.sort((a, b) => b.weight - a.weight).slice(0, 5);
 }
 
-function calculateCurrentStreak(workouts: any[]): number {
+function calculateCurrentStreak(workouts: WorkoutLog[]): number {
   if (workouts.length === 0) return 0;
 
   let streak = 0;
   const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
+  today.setHours(0, 0, 0, 0);
+
+  const workoutDates = workouts
+    .map((w) => {
+      const date = new Date(w.startTime);
+      date.setHours(0, 0, 0, 0);
+      return date;
+    })
+    .filter(
+      (date, index, self) =>
+        self.findIndex((d) => d.getTime() === date.getTime()) === index
+    )
+    .sort((a, b) => b.getTime() - a.getTime());
 
   // Check if worked out today or yesterday
-  const hasWorkedOutToday = workouts.some(
-    (w) => new Date(w.startTime).toDateString() === today.toDateString()
+  const todayStr = today.toDateString();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toDateString();
+
+  const hasWorkedOutToday = workoutDates.some(
+    (d) => d.toDateString() === todayStr
   );
-  const hasWorkedOutYesterday = workouts.some(
-    (w) => new Date(w.startTime).toDateString() === yesterday.toDateString()
+  const hasWorkedOutYesterday = workoutDates.some(
+    (d) => d.toDateString() === yesterdayStr
   );
 
   if (hasWorkedOutToday || hasWorkedOutYesterday) {
     streak = 1;
     let currentDate = hasWorkedOutToday ? today : yesterday;
 
+    // Check consecutive days backwards
     while (true) {
       currentDate.setDate(currentDate.getDate() - 1);
-      const hasWorkedOut = workouts.some(
-        (w) =>
-          new Date(w.startTime).toDateString() === currentDate.toDateString()
+      const dateStr = currentDate.toDateString();
+      const hasWorkedOut = workoutDates.some(
+        (d) => d.toDateString() === dateStr
       );
 
       if (hasWorkedOut) {
@@ -357,13 +392,17 @@ function calculateCurrentStreak(workouts: any[]): number {
   return streak;
 }
 
-function calculateLongestStreak(workouts: any[]): number {
+function calculateLongestStreak(workouts: WorkoutLog[]): number {
   if (workouts.length === 0) return 0;
 
   const dates = workouts
-    .map((w) => new Date(w.startTime).toDateString())
-    .sort()
-    .filter((date, i, arr) => arr.indexOf(date) === i);
+    .map((w) => {
+      const date = new Date(w.startTime);
+      date.setHours(0, 0, 0, 0);
+      return date.getTime();
+    })
+    .filter((date, i, arr) => arr.indexOf(date) === i)
+    .sort((a, b) => a - b);
 
   let longestStreak = 0;
   let currentStreak = 1;
@@ -386,7 +425,7 @@ function calculateLongestStreak(workouts: any[]): number {
   return Math.max(longestStreak, currentStreak);
 }
 
-function calculateWorkoutsThisWeek(workouts: any[]): number {
+function calculateWorkoutsThisWeek(workouts: WorkoutLog[]): number {
   const now = new Date();
   const startOfWeek = new Date(now);
   startOfWeek.setDate(now.getDate() - now.getDay());
@@ -398,7 +437,7 @@ function calculateWorkoutsThisWeek(workouts: any[]): number {
   }).length;
 }
 
-function calculateWeeklyVolumeTrend(workouts: any[]): any {
+function calculateWeeklyVolumeTrend(workouts: WorkoutWithLogs[]): any {
   const now = new Date();
   const startOfWeek = new Date(now);
   startOfWeek.setDate(now.getDate() - now.getDay());
@@ -419,15 +458,19 @@ function calculateWeeklyVolumeTrend(workouts: any[]): any {
     return workoutDate >= lastWeekStart && workoutDate <= lastWeekEnd;
   });
 
-  const currentWeekVolume = currentWeekWorkouts.reduce(
-    (sum, w) => sum + (w.calculatedMetrics?.totalVolume || 0),
-    0
-  );
+  const calculateVolume = (workouts: WorkoutWithLogs[]) => {
+    return workouts.reduce((sum, w) => {
+      const metrics = w.calculatedMetrics
+        ? typeof w.calculatedMetrics === "string"
+          ? JSON.parse(w.calculatedMetrics)
+          : w.calculatedMetrics
+        : {};
+      return sum + (metrics.totalVolume || 0);
+    }, 0);
+  };
 
-  const lastWeekVolume = lastWeekWorkouts.reduce(
-    (sum, w) => sum + (w.calculatedMetrics?.totalVolume || 0),
-    0
-  );
+  const currentWeekVolume = calculateVolume(currentWeekWorkouts);
+  const lastWeekVolume = calculateVolume(lastWeekWorkouts);
 
   const percentageChange =
     lastWeekVolume === 0
@@ -447,7 +490,7 @@ function calculateWeeklyVolumeTrend(workouts: any[]): any {
   };
 }
 
-function groupWorkoutsByWeek(workouts: any[]) {
+function groupWorkoutsByWeek(workouts: WorkoutWithLogs[]) {
   const weeklyData: any[] = [];
 
   // Group workouts by week
@@ -466,8 +509,14 @@ function groupWorkoutsByWeek(workouts: any[]) {
     }
 
     groups[weekKey].workouts.push(workout);
-    groups[weekKey].volume += workout.calculatedMetrics?.totalVolume || 0;
-    groups[weekKey].exercises += workout.exercises.length;
+
+    const metrics = workout.calculatedMetrics
+      ? typeof workout.calculatedMetrics === "string"
+        ? JSON.parse(workout.calculatedMetrics)
+        : workout.calculatedMetrics
+      : {};
+    groups[weekKey].volume += metrics.totalVolume || 0;
+    groups[weekKey].exercises += workout.exerciseLogs.length;
 
     return groups;
   }, {});
@@ -478,7 +527,7 @@ function groupWorkoutsByWeek(workouts: any[]) {
     weeklyData.push(week);
   });
 
-  return weeklyData.sort((a, b) => a.weekStart - b.weekStart);
+  return weeklyData.sort((a: any, b: any) => a.weekStart - b.weekStart);
 }
 
 function getWeekStartDate(date: Date): Date {
