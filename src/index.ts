@@ -15,13 +15,46 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
+// CORS configuration - allow multiple origins
+const allowedOrigins = [
+  process.env.FRONTEND_URL || "http://localhost:5173",
+  "https://paraverse-workout-tracker.vercel.app",
+  "https://paraverse-workout-tracker-*.vercel.app", // Allow preview deployments too
+];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      if (
+        allowedOrigins.some((allowedOrigin) => {
+          // Exact match
+          if (origin === allowedOrigin) return true;
+
+          // Wildcard match for preview deployments
+          if (allowedOrigin.includes("*")) {
+            const pattern = allowedOrigin.replace("*", ".*");
+            return new RegExp(pattern).test(origin);
+          }
+
+          return false;
+        })
+      ) {
+        return callback(null, true);
+      } else {
+        console.log(`CORS blocked for origin: ${origin}`);
+        return callback(new Error("Not allowed by CORS"), false);
+      }
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
   })
 );
+
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
