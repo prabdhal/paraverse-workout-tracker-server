@@ -19,7 +19,13 @@ const PORT = process.env.PORT || 3001;
 const allowedOrigins = [
   process.env.FRONTEND_URL || "http://localhost:5173",
   "https://paraverse-workout-tracker.vercel.app",
-  "https://paraverse-workout-tracker-*.vercel.app", // Allow preview deployments too
+  "https://paraverse-workout-tracker-*.vercel.app",
+  // Add mobile-specific origins
+  "capacitor://localhost",
+  "ionic://localhost",
+  "http://localhost",
+  // Add your vercel deployment URL
+  "https://paraverse-workout-tracker.vercel.app",
 ];
 
 app.use(
