@@ -593,58 +593,64 @@ router.get("/active/current", authenticateToken, async (req, res) => {
   }
 });
 
-// server/src/routes/program.routes.ts - FIXED DEACTIVATE ROUTE
+// server/src/routes/program.routes.ts
 router.patch("/:id/deactivate", authenticateToken, async (req, res) => {
   try {
-    console.log("Deactivating program with ID:", req.params.id);
-    console.log("User ID:", req.user!.userId);
+    console.log("🟢 DEACTIVATE ENDPOINT HIT");
+    console.log("🔵 URL ID parameter:", req.params.id);
+    console.log("🔵 User ID:", req.user!.userId);
 
-    // First, find if there's an active program for this user
-    const activeProgram = await prisma.activeProgram.findFirst({
+    // Log what's in the database
+    const allUserActivePrograms = await prisma.activeProgram.findMany({
       where: {
         userId: req.user!.userId,
         isActive: true,
       },
     });
 
+    console.log("🔵 All active programs for user:", allUserActivePrograms);
+
+    // Find the specific active program
+    const activeProgram = await prisma.activeProgram.findFirst({
+      where: {
+        id: req.params.id, // Using the ID from URL
+        userId: req.user!.userId,
+        isActive: true,
+      },
+    });
+
+    console.log("🔵 Found active program:", activeProgram);
+
     if (!activeProgram) {
-      console.log("No active program found for user:", req.user!.userId);
+      console.log("❌ No active program found with ID:", req.params.id);
       return res.status(404).json({
         success: false,
         message: "No active program found",
       });
     }
 
-    console.log("Found active program:", {
-      activeProgramId: activeProgram.id,
-      programId: activeProgram.programId,
-      isActive: activeProgram.isActive,
-    });
+    console.log("🟢 Deactivating program:", activeProgram.id);
 
-    // Deactivate the program
-    await prisma.activeProgram.update({
+    // Deactivate it
+    const result = await prisma.activeProgram.update({
       where: { id: activeProgram.id },
       data: { isActive: false },
     });
 
-    console.log("Program deactivated successfully");
+    console.log("✅ Deactivation result:", result);
 
     res.json({
       success: true,
-      message: "Program deactivated",
+      message: "Program deactivated successfully",
       data: {
         deactivatedProgramId: activeProgram.programId,
         activeProgramId: activeProgram.id,
       },
     });
   } catch (error: any) {
-    console.error("Deactivate program error:", error);
-    console.error("Error details:", {
-      message: error.message,
-      code: error.code,
-      meta: error.meta,
-      stack: error.stack,
-    });
+    console.error("❌ DEACTIVATE ERROR:", error);
+    console.error("❌ Error message:", error.message);
+    console.error("❌ Error stack:", error.stack);
 
     res.status(500).json({
       success: false,
@@ -653,7 +659,6 @@ router.patch("/:id/deactivate", authenticateToken, async (req, res) => {
     });
   }
 });
-
 router.put("/active-programs/:id", authenticateToken, async (req, res) => {
   try {
     const { progressPercentage } = req.body;
