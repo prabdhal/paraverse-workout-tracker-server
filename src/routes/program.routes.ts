@@ -631,13 +631,17 @@ router.patch("/:id/deactivate", authenticateToken, async (req, res) => {
 
     console.log("🟢 Deactivating program:", activeProgram.id);
 
-    // Deactivate it
-    const result = await prisma.activeProgram.update({
-      where: { id: activeProgram.id },
+    // Simple fix - update all to inactive
+    const result = await prisma.activeProgram.updateMany({
+      where: {
+        userId: req.user!.userId,
+        isActive: true,
+        id: activeProgram.id, // Optional: only update this specific one
+      },
       data: { isActive: false },
     });
 
-    console.log("✅ Deactivation result:", result);
+    console.log("✅ Deactivation result (updated count):", result.count);
 
     res.json({
       success: true,
