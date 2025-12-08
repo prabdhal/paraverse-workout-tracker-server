@@ -593,36 +593,63 @@ router.get("/active/current", authenticateToken, async (req, res) => {
   }
 });
 
+// server/src/routes/program.routes.ts - FIXED DEACTIVATE ROUTE
 router.patch("/:id/deactivate", authenticateToken, async (req, res) => {
   try {
+    console.log("Deactivating program with ID:", req.params.id);
+    console.log("User ID:", req.user!.userId);
+
+    // First, find if there's an active program for this user
     const activeProgram = await prisma.activeProgram.findFirst({
       where: {
-        id: req.params.id,
         userId: req.user!.userId,
+        isActive: true,
       },
     });
 
     if (!activeProgram) {
+      console.log("No active program found for user:", req.user!.userId);
       return res.status(404).json({
         success: false,
-        message: "Active program not found",
+        message: "No active program found",
       });
     }
 
+    console.log("Found active program:", {
+      activeProgramId: activeProgram.id,
+      programId: activeProgram.programId,
+      isActive: activeProgram.isActive,
+    });
+
+    // Deactivate the program
     await prisma.activeProgram.update({
-      where: { id: req.params.id },
+      where: { id: activeProgram.id },
       data: { isActive: false },
     });
+
+    console.log("Program deactivated successfully");
 
     res.json({
       success: true,
       message: "Program deactivated",
+      data: {
+        deactivatedProgramId: activeProgram.programId,
+        activeProgramId: activeProgram.id,
+      },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Deactivate program error:", error);
+    console.error("Error details:", {
+      message: error.message,
+      code: error.code,
+      meta: error.meta,
+      stack: error.stack,
+    });
+
     res.status(500).json({
       success: false,
       message: "Failed to deactivate program",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });

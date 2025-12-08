@@ -12,6 +12,10 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/**/*",
+    "../client/src/stores",
+    "../client/src/lib/api/index.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }
