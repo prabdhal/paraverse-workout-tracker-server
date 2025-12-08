@@ -9,11 +9,15 @@ import analyticsRoutes from "./routes/analytics.routes";
 import profileRoutes from "./routes/profile.routes";
 import workoutLogRoutes from "./routes/workoutLog.routes";
 import { authenticateToken } from "./middleware/auth";
+import helmet from "helmet";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Disable Express's default ETag
+app.set("etag", false);
 
 // CORS configuration - allow multiple origins
 const allowedOrigins = [
@@ -60,14 +64,28 @@ app.use(
   })
 );
 
+app.use(helmet());
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// ⬇️ ADD THIS CACHE CONTROL MIDDLEWARE ⬇️
 app.use((req, res, next) => {
-  // Disable cache for ALL API routes
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  console.log(`🔧 Applying cache control to: ${req.method} ${req.path}`);
+
+  // Remove any caching headers
+  res.removeHeader("ETag");
+  res.removeHeader("Last-Modified");
+
+  // Set strict no-cache headers
+  res.setHeader(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate"
+  );
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+
   next();
 });
 
