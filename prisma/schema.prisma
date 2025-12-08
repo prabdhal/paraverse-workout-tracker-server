@@ -197,6 +197,6 @@ model ActiveProgram {
   streak             Int            @default(0)
   isActive           Boolean        @default(true)
 
-  @@unique([userId, isActive], name: "unique_active_program_per_user")
+  @@unique([userId], where: { isActive: true }, name: "unique_active_program_per_user")
   @@index([userId])
 }
