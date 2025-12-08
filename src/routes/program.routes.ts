@@ -483,11 +483,21 @@ router.post("/:id/start", authenticateToken, async (req, res) => {
       });
     }
 
-    // Deactivate any current active program
-    await prisma.activeProgram.updateMany({
-      where: { userId: req.user!.userId },
-      data: { isActive: false },
+    // Check if user already has an active program
+    const existingActive = await prisma.activeProgram.findFirst({
+      where: {
+        userId: req.user!.userId,
+        isActive: true,
+      },
     });
+
+    if (existingActive) {
+      // Deactivate the current active program
+      await prisma.activeProgram.update({
+        where: { id: existingActive.id },
+        data: { isActive: false },
+      });
+    }
 
     // Create new active program
     const activeProgram = await prisma.activeProgram.create({
@@ -621,15 +631,37 @@ router.patch("/:id/deactivate", authenticateToken, async (req, res) => {
 
     console.log("🟢 Deactivating program:", activeProgram.id);
 
-    // SIMPLE FIX: Use update (singular) instead of updateMany
-    const result = await prisma.activeProgram.update({
+    // IMPORTANT: Check if there's already an inactive record
+    const existingInactive = await prisma.activeProgram.findFirst({
       where: {
-        id: activeProgram.id,
-      },
-      data: {
+        userId: req.user!.userId,
         isActive: false,
-        nextWorkoutDate: null, // Optional: clear next workout date
+        NOT: {
+          id: activeProgram.id, // Don't include the one we're updating
+        },
       },
+    });
+
+    // Use a transaction to ensure data integrity
+    const result = await prisma.$transaction(async (tx) => {
+      // If there's already an inactive record, DELETE it first
+      if (existingInactive) {
+        console.log("🟡 Deleting old inactive record:", existingInactive.id);
+        await tx.activeProgram.delete({
+          where: { id: existingInactive.id },
+        });
+      }
+
+      // Now update the current program to inactive
+      const updated = await tx.activeProgram.update({
+        where: { id: activeProgram.id },
+        data: {
+          isActive: false,
+          nextWorkoutDate: null,
+        },
+      });
+
+      return updated;
     });
 
     console.log("✅ Deactivation successful. Updated record:", result.id);
