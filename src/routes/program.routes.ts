@@ -600,20 +600,10 @@ router.patch("/:id/deactivate", authenticateToken, async (req, res) => {
     console.log("🔵 URL ID parameter:", req.params.id);
     console.log("🔵 User ID:", req.user!.userId);
 
-    // Log what's in the database
-    const allUserActivePrograms = await prisma.activeProgram.findMany({
-      where: {
-        userId: req.user!.userId,
-        isActive: true,
-      },
-    });
-
-    console.log("🔵 All active programs for user:", allUserActivePrograms);
-
     // Find the specific active program
     const activeProgram = await prisma.activeProgram.findFirst({
       where: {
-        id: req.params.id, // Using the ID from URL
+        id: req.params.id,
         userId: req.user!.userId,
         isActive: true,
       },
@@ -631,17 +621,18 @@ router.patch("/:id/deactivate", authenticateToken, async (req, res) => {
 
     console.log("🟢 Deactivating program:", activeProgram.id);
 
-    // Simple fix - update all to inactive
-    const result = await prisma.activeProgram.updateMany({
+    // SIMPLE FIX: Use update (singular) instead of updateMany
+    const result = await prisma.activeProgram.update({
       where: {
-        userId: req.user!.userId,
-        isActive: true,
-        id: activeProgram.id, // Optional: only update this specific one
+        id: activeProgram.id,
       },
-      data: { isActive: false },
+      data: {
+        isActive: false,
+        nextWorkoutDate: null, // Optional: clear next workout date
+      },
     });
 
-    console.log("✅ Deactivation result (updated count):", result.count);
+    console.log("✅ Deactivation successful. Updated record:", result.id);
 
     res.json({
       success: true,
@@ -654,7 +645,6 @@ router.patch("/:id/deactivate", authenticateToken, async (req, res) => {
   } catch (error: any) {
     console.error("❌ DEACTIVATE ERROR:", error);
     console.error("❌ Error message:", error.message);
-    console.error("❌ Error stack:", error.stack);
 
     res.status(500).json({
       success: false,
@@ -663,6 +653,7 @@ router.patch("/:id/deactivate", authenticateToken, async (req, res) => {
     });
   }
 });
+
 router.put("/active-programs/:id", authenticateToken, async (req, res) => {
   try {
     const { progressPercentage } = req.body;
