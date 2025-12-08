@@ -273,6 +273,7 @@ router.put("/:id", authenticateToken, async (req, res) => {
       daysPerWeek,
       durationWeeks,
       workoutDaysCount: workoutDays?.length || 0,
+      workoutDays: workoutDays ? "present" : "undefined/missing", // Add this debug
     });
 
     // Start a transaction to update program and related data
@@ -304,8 +305,10 @@ router.put("/:id", authenticateToken, async (req, res) => {
         data: updateData,
       });
 
-      // If workoutDays are provided, update them
+      // ✅ FIX: Only update workoutDays if they are provided and is an array
       if (workoutDays && Array.isArray(workoutDays)) {
+        console.log(`🔄 Updating ${workoutDays.length} workout days...`);
+
         // Delete existing workout days and exercises first
         await tx.programDayExercise.deleteMany({
           where: {
@@ -321,6 +324,18 @@ router.put("/:id", authenticateToken, async (req, res) => {
 
         // Create new workout days with exercises
         for (const day of workoutDays) {
+          console.log(
+            `Creating day: ${day.name} with ${
+              day.exercises?.length || 0
+            } exercises`
+          );
+
+          // ✅ FIX: Check if day.exercises exists and is an array
+          if (!day.exercises || !Array.isArray(day.exercises)) {
+            console.warn(`⚠️ No exercises array for day ${day.name}`);
+            continue;
+          }
+
           await tx.workoutDay.create({
             data: {
               programId: req.params.id,
@@ -345,6 +360,10 @@ router.put("/:id", authenticateToken, async (req, res) => {
             },
           });
         }
+      } else {
+        console.log(
+          "ℹ️ No workoutDays provided in update, keeping existing days"
+        );
       }
 
       // Return the updated program with all relations
@@ -400,7 +419,7 @@ router.put("/:id", authenticateToken, async (req, res) => {
       })),
     };
 
-    console.log("Program updated successfully:", updatedProgram.id);
+    console.log("✅ Program updated successfully:", updatedProgram.id);
 
     res.json({
       success: true,
