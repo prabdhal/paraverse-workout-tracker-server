@@ -2,12 +2,12 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import authRoutes from "./routes/auth.routes";
-import workoutRoutes from "./routes/workout.routes";
-import programRoutes from "./routes/program.routes";
-import exerciseRoutes from "./routes/exercise.routes";
+import workoutsRoutes from "./routes/workouts.routes";
+import programsRoutes from "./routes/programs.routes";
+import exercisesRoutes from "./routes/exercises.routes";
 import analyticsRoutes from "./routes/analytics.routes";
-import profileRoutes from "./routes/profile.routes";
-import workoutLogRoutes from "./routes/workoutLog.routes";
+import profilesRoutes from "./routes/profiles.routes";
+import workoutLogsRoutes from "./routes/workoutLogs.routes";
 import { authenticateToken } from "./middleware/auth";
 import helmet from "helmet";
 
@@ -207,12 +207,12 @@ app.get("/api", (req, res) => {
 
 // API Routes
 app.use("/api/auth", authRoutes);
-app.use("/api/workouts", authenticateToken, workoutRoutes);
-app.use("/api/programs", authenticateToken, programRoutes);
-app.use("/api/exercises", authenticateToken, exerciseRoutes);
+app.use("/api/workouts", authenticateToken, workoutsRoutes);
+app.use("/api/programs", authenticateToken, programsRoutes);
+app.use("/api/exercises", authenticateToken, exercisesRoutes);
 app.use("/api/analytics", authenticateToken, analyticsRoutes);
-app.use("/api/profile", authenticateToken, profileRoutes);
-app.use("/api/workout-logs", authenticateToken, workoutLogRoutes);
+app.use("/api/profile", authenticateToken, profilesRoutes);
+app.use("/api/workout-logs", authenticateToken, workoutLogsRoutes);
 
 // Protected test route
 app.get("/api/protected", authenticateToken, (req, res) => {
