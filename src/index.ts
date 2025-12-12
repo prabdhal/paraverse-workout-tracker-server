@@ -10,6 +10,7 @@ import profilesRoutes from "./routes/profiles.routes";
 import workoutLogsRoutes from "./routes/workoutLogs.routes";
 import { authenticateToken } from "./middleware/auth";
 import helmet from "helmet";
+import { PrismaClient } from "@prisma/client";
 
 dotenv.config();
 
@@ -98,8 +99,6 @@ app.get("/health", (req, res) => {
     version: "1.0.0",
   });
 });
-
-import { PrismaClient } from "@prisma/client";
 
 // Add this after your health check
 app.get("/api/db-test", async (req, res) => {
