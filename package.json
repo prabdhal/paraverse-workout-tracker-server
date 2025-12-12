@@ -15,7 +15,7 @@
     "render-build": "npm install && npm run prisma:generate && npm run prisma:migrate:deploy && npm run build"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^7.1.0",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
